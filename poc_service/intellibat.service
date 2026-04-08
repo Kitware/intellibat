@@ -1,0 +1,21 @@
+After=network.target
+
+[Service]
+Type=simple
+
+User=root
+Group=root
+
+WorkingDirectory=/opt/intellibat
+ExecStart=/opt/intellibat/venv/bin/python /opt/intellibat/main.py
+
+Restart=on-failure
+RestartSec=2
+
+StandardOutput=journal
+StandardError=journal
+
+Environment=PYTHONUNBUFFERED=1
+
+[Install]
+WantedBy=multi-user.target
