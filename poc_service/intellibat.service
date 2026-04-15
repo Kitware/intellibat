@@ -3,8 +3,8 @@ After=network.target
 [Service]
 Type=simple
 
-User=root
-Group=root
+User=intellibat
+Group=intellibat
 
 WorkingDirectory=/opt/intellibat
 ExecStart=/opt/intellibat/venv/bin/python /opt/intellibat/main.py
@@ -16,6 +16,7 @@ StandardOutput=journal
 StandardError=journal
 
 Environment=PYTHONUNBUFFERED=1
+Environment=PIP_NO_CACHE_DIR=1
 
 [Install]
 WantedBy=multi-user.target

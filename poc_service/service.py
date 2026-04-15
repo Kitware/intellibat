@@ -1,3 +1,27 @@
+"""
+A proof-of-concept python script that reads data over USB.
+
+Incoming data is audio data (see stream.py for an example).
+
+As chunks of data come in, they are minimally processed to determine if
+those chunks should be saved to disc or not. Currently that processing
+involves checking the frequency with the most energy (via FFT). If the
+frequency is above a certain threshold, then the chunk is saved.
+
+This script is also responsible for reading from a configuration file. This
+is meant to simulate the configuration that the Intellibat system will
+eventually support. Here are some example configuration options:
+
+Supported:
+    - threshold_freq: the target frequency necessary for saving audio to begin
+
+Not supported:
+    - threshold_energy: target amplitude for frequencies in some band. could be a better way to
+        determine the presence of high-frequency bat calls
+    - sample_rate: preferred sample rate for processed audio and of saved audio chunks
+    - chunk_size: size of audio chunks to save to disc
+"""
+
 import serial
 import numpy as np
 import time

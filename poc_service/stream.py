@@ -1,3 +1,12 @@
+"""
+A dummy script meant to run on a Raspberry Pi Pico.
+
+Streams sinewave data at a random frequency between 220Hz and
+1760Hz, switching frequncies at 5-second intervals.
+
+Also contains logic to accept commands to start/stop streaming,
+or to stream at different sample rates.
+"""
 import math
 import time
 import sys
@@ -78,12 +87,6 @@ while True:
             next_sample_time = time.ticks_add(next_sample_time, sample_interval_us)
             
     now_ms = time.ticks_ms()
-    # if time.ticks_diff(now_ms, last_report) >= 1000:
-    #     print("SAMPLES/sec:", sample_count)
-    #     sample_count = 0
-    #     last_report = now_ms
-
     if time.ticks_diff(now_ms, last_switch) >= switch_interval:
         frequency = random.randint(220, 1760)
-        # print("FREQ:", frequency)
         last_switch = now_ms
