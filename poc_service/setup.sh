@@ -20,7 +20,23 @@ sudo -u intellibat ./venv/bin/python -m pip install --no-cache-dir --upgrade pip
 sudo -u intellibat ./venv/bin/python -m pip install --no-cache-dir -r requirements.txt
 popd
 
+# Set up the configuration file
+CONFIG_DIR=/etc/intellibat/
+
+sudo usermod -aG intellibat $(whoami)
+
+sudo mkdir -p $CONFIG_DIR
+sudo chown -R root:intellibat $CONFIG_DIR
+sudo chmod 775 $CONFIG_DIR
+
+if [ ! -f "$CONFIG_DIR/config.json" ]; then
+    sudo cp ./default_config.json $CONFIG_DIR/config.json
+fi
+sudo chmod 664 $CONFIG_DIR/config.json
+
 # Set up the service
 sudo cp ./intellibat.service /etc/systemd/system/intellibat.service
 sudo systemctl daemon-reload
+sudo systemctl enable intellibat
 sudo systemctl restart intellibat
+
