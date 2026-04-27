@@ -1,30 +1,13 @@
 import click
-from pathlib import Path
-import json
 
-
-CONFIG_SCHEMA = {
-    "sample_rate": {"type": int, "validators": []},
-    "threshold_freq": {"type": int, "validators": []},
-}
-CONFIG_PATH = Path("/etc/intellibat/config.json")
-
-
-def convert_new_value(setting_name, value):
-    expected_type = CONFIG_SCHEMA[setting_name]["type"]
-    try:
-        return expected_type(value)
-    except ValueError:
-        return None
-
-
-def validate_setting_value(setting_name, value) -> None | list[str]:
-    errors = []
-    for validator in CONFIG_SCHEMA[setting_name]["validators"]:
-        result = validator(value)
-        if result is not None:
-            errors.append(result)
-    return errors or None
+from .config_editor import (
+    CONFIG_SCHEMA,
+    CONFIG_PATH,
+    convert_new_value,
+    validate_setting_value,
+    load_config,
+    write_config,
+)
 
 
 def get_available_settings_text():
@@ -41,33 +24,17 @@ def generate_errors_text(setting: str, value, errors: list[str]):
     return errors_text
 
 
-def load_config(config_path: Path):
-    if not config_path.exists():
-        raise Exception("File doesn't exist")
-    with open(config_path) as f:
-        try:
-            config = json.load(f)
-            return config
-        except Exception as e:
-            raise Exception("File isn't valid json")
-
-
-def write_config(config_dict: dict, config_path: Path):
-    with open(config_path, "w") as f:
-        json.dump(config_dict, f, indent=2)
-
-
 @click.group()
-def intellibat_config():
+def intellibat_config_cli():
     pass
 
 
-@intellibat_config.command("list")
+@intellibat_config_cli.command("list")
 def list_settings():
     click.echo(get_available_settings_text())
 
 
-@intellibat_config.command("get")
+@intellibat_config_cli.command("get")
 @click.argument("setting-name", type=str)
 def get(setting_name):
     if setting_name not in CONFIG_SCHEMA:
@@ -86,7 +53,7 @@ def get(setting_name):
             click.echo(str(e))
 
 
-@intellibat_config.command("set")
+@intellibat_config_cli.command("set")
 @click.argument("setting-name", type=str)
 @click.argument("new-value")
 def set(setting_name, new_value):
@@ -112,4 +79,4 @@ def set(setting_name, new_value):
 
 
 if __name__ == "__main__":
-    intellibat_config()
+    intellibat_config_cli()
