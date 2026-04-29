@@ -3,8 +3,18 @@ import json
 
 
 CONFIG_SCHEMA = {
-    "sample_rate": {"type": int, "validators": []},
-    "threshold_freq": {"type": int, "validators": []},
+    "sample_rate": {
+        "type": int, 
+        "validators": [], 
+        "name": "Sample Rate",
+        "placeholder": "Sample rate for recordings",
+    },
+    "threshold_freq": {
+        "type": int, 
+        "validators": [], 
+        "name": "Threshold Frequency",
+        "placeholder": "Minimum frequency to trigger recording",
+    },
 }
 CONFIG_PATH = Path("/etc/intellibat/config.json")
 
