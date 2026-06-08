@@ -24,6 +24,7 @@ Not supported:
 
 import serial
 import numpy as np
+from datetime import datetime
 import time
 import wave
 import os
@@ -40,12 +41,20 @@ SAMPLE_RATE = 8000
 THRESHOLD_FREQ = 1200
 SAMPLE_RATE_KEY = "sample_rate"
 THRESHOLD_FREQ_KEY = "threshold_freq"
-CONFIG_KEYS = [SAMPLE_RATE_KEY, THRESHOLD_FREQ_KEY]
+RECORDING_START_TIME = datetime.strptime("17:00", "%H:%M").time()
+RECORDING_END_TIME = datetime.strptime("05:30", "%H:%M").time()
+START_TIME_KEY = "start_time"
+END_TIME_KEY = "end_time"
+CONFIG_KEYS = [SAMPLE_RATE_KEY, THRESHOLD_FREQ_KEY, START_TIME_KEY, END_TIME_KEY]
 
 CHUNK_SECONDS = 2
 BYTES_PER_SAMPLE = 2
 SAMPLES_PER_CHUNK = SAMPLE_RATE * CHUNK_SECONDS
 BYTES_PER_CHUNK = SAMPLES_PER_CHUNK * BYTES_PER_SAMPLE
+
+RELOAD_INTERVAL = 60  # seconds
+LAST_RELOAD_TIME = datetime.now()
+LAST_RELOAD_MONOTONIC = time.monotonic()
 
 OUTPUT_DIR = "/home/mikenagler/dev/batai/data/test_recordings"
 CONFIG_PATH = Path("/etc/intellibat/config.json")
@@ -63,7 +72,7 @@ def validate_config(config: dict) -> bool:
     return not missing
 
 def setup():
-    print("Setting up...") 
+    print("Setting up...")
     # Try and find the settings file
     if not CONFIG_PATH.exists():
         CONFIG_PATH.parent.mkdir(parents=True, exist_ok=True)
@@ -72,6 +81,8 @@ def setup():
             json.dump({
                 SAMPLE_RATE_KEY: 8000,
                 THRESHOLD_FREQ_KEY: 1200,
+                START_TIME_KEY: "17:00",
+                END_TIME_KEY: "05:30",
             }, f, indent=2)
         print(f"Config file created at {CONFIG_PATH}. Please review and restart service.")
         sys.exit(1)
@@ -84,40 +95,72 @@ def setup():
             sys.exit(1)
         global SAMPLE_RATE
         global THRESHOLD_FREQ
+        global RECORDING_START_TIME
+        global RECORDING_END_TIME
         SAMPLE_RATE = config[SAMPLE_RATE_KEY]
         THRESHOLD_FREQ = config[THRESHOLD_FREQ_KEY]
+        RECORDING_START_TIME = datetime.strptime(config[START_TIME_KEY], "%H:%M").time()
+        RECORDING_END_TIME = datetime.strptime(config[END_TIME_KEY], "%H:%M").time()
+
+        global LAST_RELOAD_TIME
+        LAST_RELOAD_TIME = datetime.now()
+
+
+def maybe_reload_config():
+    if time.monotonic() - LAST_RELOAD_MONOTONIC > RELOAD_INTERVAL:
+        setup()
+
+
+def should_record():
+    now = datetime.now().time()
+
+    if RECORDING_START_TIME < RECORDING_END_TIME:
+        return RECORDING_START_TIME <= now < RECORDING_END_TIME
+
+    # Handle a range that crosses midnight
+    return now >= RECORDING_START_TIME or now < RECORDING_END_TIME
 
 
 def record():
     print("Reading...")
     while True:
-        data = ser.read(BYTES_PER_CHUNK)
-        if len(data) != BYTES_PER_CHUNK:
-            print("Incomplete read:", len(data))
-            continue
-        samples = np.frombuffer(data, dtype="<i2")
+        maybe_reload_config()
 
-        fft = np.fft.rfft(samples)
-        freqs = np.fft.rfftfreq(len(samples), d=1/SAMPLE_RATE)
+        if should_record():
+            data = ser.read(BYTES_PER_CHUNK)
+            if len(data) != BYTES_PER_CHUNK:
+                print("Incomplete read:", len(data))
+                continue
+            samples = np.frombuffer(data, dtype="<i2")
 
-        magnitude = np.abs(fft)
-        magnitude[0] = 0
+            fft = np.fft.rfft(samples)
+            freqs = np.fft.rfftfreq(len(samples), d=1/SAMPLE_RATE)
 
-        peak_idx = np.argmax(magnitude)
-        peak_freq = freqs[peak_idx]
+            magnitude = np.abs(fft)
+            magnitude[0] = 0
 
-        if peak_freq > THRESHOLD_FREQ:
-            print(f"Peak: {int(peak_freq)} Hz -> KEEP")
+            peak_idx = np.argmax(magnitude)
+            peak_freq = freqs[peak_idx]
 
-            filename = os.path.join(OUTPUT_DIR, f"chunk_{int(time.time())}.wav")
-            with wave.open(filename, "wb") as wf:
-                wf.setnchannels(1)
-                wf.setsampwidth(2)
-                wf.setframerate(SAMPLE_RATE)
-                wf.writeframes(data)
-            print("Saved:", filename)
+            if peak_freq > THRESHOLD_FREQ:
+                print(f"Peak: {int(peak_freq)} Hz -> KEEP")
+
+                filename = os.path.join(OUTPUT_DIR, f"chunk_{int(time.time())}.wav")
+                with wave.open(filename, "wb") as wf:
+                    wf.setnchannels(1)
+                    wf.setsampwidth(2)
+                    wf.setframerate(SAMPLE_RATE)
+                    wf.writeframes(data)
+                print("Saved:", filename)
+            else:
+                print(f"Peak: {int(peak_freq)} Hz -> DISCARD")
         else:
-            print(f"Peak: {int(peak_freq)} Hz -> DISCARD")
+            ser.reset_input_buffer()
+            time.sleep(5)
+
+
+
+
 
 
 def main():
