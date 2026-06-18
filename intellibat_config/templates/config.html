@@ -1,0 +1,204 @@
+<!doctype html>
+<html>
+<head>
+    <title>IntelliBat Config</title>
+</head>
+<body>
+
+<h1>IntelliBat Configuration</h1>
+
+<form method="post">
+
+    <!-- recording_format -->
+    <div>
+        <label>recording_format</label>
+        <select name="recording_format">
+            <option value="full_spectrum"
+                {% if config["recording_format"] == "full_spectrum" %}selected{% endif %}>
+                full_spectrum
+            </option>
+            <option value="zero_crossing"
+                {% if config["recording_format"] == "zero_crossing" %}selected{% endif %}>
+                zero_crossing
+            </option>
+        </select>
+        {% if errors.get("recording_format") %}
+        <ul>
+            {% for error in errors["recording_format"] %}
+            <li>{{ error }}</li>
+            {% endfor %}
+        </ul>
+        {% endif %}
+    </div>
+
+    <!-- sample_rate -->
+    <div>
+        <label>sample_rate</label>
+        <select name="sample_rate">
+            <option value="256000"
+                {% if config["sample_rate"] == 256000 %}selected{% endif %}>
+                256000
+            </option>
+            <option value="384000"
+                {% if config["sample_rate"] == 384000 %}selected{% endif %}>
+                384000
+            </option>
+            <option value="500000"
+                {% if config["sample_rate"] == 500000 %}selected{% endif %}>
+                500000
+            </option>
+        </select>
+        {% if errors.get("sample_rate") %}
+        <ul>
+            {% for error in errors["sample_rate"] %}
+            <li>{{ error }}</li>
+            {% endfor %}
+        </ul>
+        {% endif %}
+    </div>
+
+    <!-- triggered_recording -->
+    <div>
+        <label>triggered_recording</label>
+        <input type="checkbox"
+               name="triggered_recording"
+               {% if config["triggered_recording"] %}checked{% endif %}>
+        {% if errors.get("triggered_recording") %}
+        <ul>
+            {% for error in errors["triggered_recording"] %}
+            <li>{{ error }}</li>
+            {% endfor %}
+        </ul>
+        {% endif %}
+    </div>
+
+    <!-- minimum_trigger_frequency -->
+    <div>
+        <label>minimum_trigger_frequency (kHz)</label>
+        <input type="number"
+               name="minimum_trigger_frequency"
+               min="6"
+               max="60"
+               value="{{ config['minimum_trigger_frequency'] }}">
+        {% if errors.get("minimum_trigger_frequency") %}
+        <ul>
+            {% for error in errors["minimum_trigger_frequency"] %}
+            <li>{{ error }}</li>
+            {% endfor %}
+        </ul>
+        {% endif %}
+    </div>
+
+    <!-- maximum_recording_length -->
+    <div>
+        <label>maximum_recording_length (seconds)</label>
+        <input type="number"
+               name="maximum_recording_length"
+               min="3"
+               max="60"
+               value="{{ config['maximum_recording_length'] }}">
+        {% if errors.get("maximum_recording_length") %}
+        <ul>
+            {% for error in errors["maximum_recording_length"] %}
+            <li>{{ error }}</li>
+            {% endfor %}
+        </ul>
+        {% endif %}
+    </div>
+
+    <!-- trigger_window -->
+    <div>
+        <label>trigger_window (seconds)</label>
+        <input type="number"
+               name="trigger_window"
+               min="1"
+               max="15"
+               value="{{ config['trigger_window'] }}">
+        {% if errors.get("trigger_window") %}
+        <ul>
+            {% for error in errors["trigger_window"] %}
+            <li>{{ error }}</li>
+            {% endfor %}
+        </ul>
+        {% endif %}
+    </div>
+
+    <!-- save_noise_files -->
+    <div>
+        <label>save_noise_files</label>
+        <input type="checkbox"
+               name="save_noise_files"
+               {% if config["save_noise_files"] %}checked{% endif %}>
+        {% if errors.get("save_noise_files") %}
+        <ul>
+            {% for error in errors["save_noise_files"] %}
+            <li>{{ error }}</li>
+            {% endfor %}
+        </ul>
+        {% endif %}
+    </div>
+
+    <!-- latitude -->
+    <div>
+        <label>latitude</label>
+        <input type="number"
+               step="any"
+               name="latitude"
+               min="-90"
+               max="90"
+               value="{{ config['latitude'] }}">
+        {% if errors.get("latitude") %}
+        <ul>
+            {% for error in errors["latitude"] %}
+            <li>{{ error }}</li>
+            {% endfor %}
+        </ul>
+        {% endif %}
+    </div>
+
+    <!-- longitude -->
+    <div>
+        <label>longitude</label>
+        <input type="number"
+               step="any"
+               name="longitude"
+               min="-180"
+               max="180"
+               value="{{ config['longitude'] }}">
+        {% if errors.get("longitude") %}
+        <ul>
+            {% for error in errors["longitude"] %}
+            <li>{{ error }}</li>
+            {% endfor %}
+        </ul>
+        {% endif %}
+    </div>
+
+    <!-- schedule_mode -->
+    <div>
+        <label>schedule_mode</label>
+        <select name="schedule_mode">
+            <option value="sunset_to_sunrise"
+                {% if config["schedule_mode"] == "sunset_to_sunrise" %}selected{% endif %}>
+                sunset_to_sunrise
+            </option>
+            <option value="sunset_minus_30_to_sunrise_plus_30"
+                {% if config["schedule_mode"] == "sunset_minus_30_to_sunrise_plus_30" %}selected{% endif %}>
+                sunset_minus_30_to_sunrise_plus_30
+            </option>
+        </select>
+        {% if errors.get("schedule_mode") %}
+        <ul>
+            {% for error in errors["schedule_mode"] %}
+            <li>{{ error }}</li>
+            {% endfor %}
+        </ul>
+        {% endif %}
+    </div>
+
+    <button type="submit">Save</button>
+
+</form>
+
+</body>
+</html>
