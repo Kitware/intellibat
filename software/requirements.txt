@@ -12,3 +12,4 @@ spidev
 textual
 torch
 tqdm
+-e ../intellibat_config
