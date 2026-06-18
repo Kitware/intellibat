@@ -1,0 +1,6 @@
+BasedOnStyle: Mozilla
+AlignOperands: false
+AlwaysBreakAfterReturnType: None
+AlwaysBreakAfterDefinitionReturnType: None
+ColumnLimit: 79
+Standard: Cpp11

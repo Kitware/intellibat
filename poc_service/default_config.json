@@ -1,4 +1,6 @@
 {
-  "sample_rate": 8000,
+  "end_time": "05:30",
+  "sample_rate": 256000,
+  "start_time": "17:00",
   "threshold_freq": 1200
 }
