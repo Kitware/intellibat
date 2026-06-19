@@ -33,6 +33,7 @@ import wave
 from datetime import datetime
 from pathlib import Path
 from threading import Thread
+from queue import Queue
 
 import numpy as np
 import serial
@@ -40,6 +41,8 @@ import serial
 # Hardware/serial related constants (future configurable)
 PORT = '/dev/ttyACM0'
 BAUD = 115200
+
+INCOMING = Queue()
 
 # Configurable settings
 SAMPLE_RATE = 384000
@@ -52,7 +55,7 @@ START_TIME_KEY = 'start_time'
 END_TIME_KEY = 'end_time'
 CONFIG_KEYS = [SAMPLE_RATE_KEY, THRESHOLD_FREQ_KEY, START_TIME_KEY, END_TIME_KEY]
 
-CHUNK_SECONDS = 2
+CHUNK_SECONDS = 5
 BYTES_PER_SAMPLE = 2
 SAMPLES_PER_CHUNK = SAMPLE_RATE * CHUNK_SECONDS
 BYTES_PER_CHUNK = SAMPLES_PER_CHUNK * BYTES_PER_SAMPLE
@@ -85,7 +88,7 @@ os.makedirs(OUTPUT_DIR, exist_ok=True)
 ser = serial.Serial(
     PORT, BAUD, timeout=SERIAL_TIMEOUT_SECONDS, write_timeout=SERIAL_TIMEOUT_SECONDS
 )
-time.sleep(3)
+time.sleep(1)
 
 
 class LED(Thread):
@@ -123,7 +126,9 @@ class LED(Thread):
         atexit.register(self.shutdown)
 
     def shutdown(self):
-        self.led.off()
+        if self.led:
+            self.led.off()
+        self.led = None
 
     def run(self):
         import colorsys
@@ -136,9 +141,12 @@ class LED(Thread):
                     # hsv_to_rgb returns red, green, blue values from 0.0 to 1.0
                     red, green, blue = colorsys.hsv_to_rgb(hue, 1.0, 1.0)
 
-                    self.led.color = (red, green, blue)
+                    if self.led:
+                        self.led.color = (red, green, blue)
 
                     time.sleep(self.step_delay)
+            except KeyboardInterrupt:
+                break
             except Exception:
                 pass
 
@@ -146,29 +154,59 @@ class LED(Thread):
 class UART(Thread):
     def __init__(self):
         Thread.__init__(self)
-        self.name = 'led'
+        self.name = 'uart'
         self.daemon = True
 
         self.baud_rate = 115200
         self.uart1 = serial.Serial('/dev/ttyAMA1', self.baud_rate, timeout=0.5)
+        self.enabled = True
 
         # Run the shutdown function to close all open things when
         # the process is terminated
         atexit.register(self.shutdown)
 
     def shutdown(self):
+        self.enabled = False
+        time.sleep(0.1)        
         self.uart1.close()  # Close port
 
     def run(self):
         time.sleep(0.5)  # Allow time for connection
         while True:
-            if self.uart1.in_waiting > 0:
+            if self.enabled and self.uart1.in_waiting > 0:
                 try:
                     line = self.uart1.readline()
                     message = line.decode('utf-8').rstrip()
                     print(f'[UART1] {message}')
                 except Exception:
                     print('[UART1] ERROR: Failed to decode message')
+
+
+class Spectrogram(Thread):
+    def __init__(self):
+        Thread.__init__(self)
+        self.name = 'spectrogram'
+        self.daemon = True
+
+    def next(self):
+        return INCOMING.get(block=True)
+
+    def run(self):
+        import batbot
+
+        while True:
+            chunk_filepath = self.next()
+            qsize = INCOMING.qsize()
+            if qsize > 1:
+                print(f'[spectrogram] Queue size {qsize}')
+
+            _, compressed_paths, metadata_path, metadata = batbot.spectrogram.compute(
+                chunk_filepath,
+                fast_mode=True,
+                quiet=True,
+                debug=False,
+            )
+            print(f'Created: {compressed_paths}')
 
 
 def update_chunk_dimensions():
@@ -334,11 +372,17 @@ def stream_reader_loop():
                 maybe_print_comm_warning(
                     'Timed out waiting for framed USB data from Pico'
                 )
+        except (OSError, KeyboardInterrupt):
+            STREAM_READER_ERROR = None
+            with SAMPLE_BUFFER_CONDITION:
+                SAMPLE_BUFFER_CONDITION.notify_all()
+            maybe_print_comm_warning('\n\nFinishing...')
+            return
         except Exception as exc:
             STREAM_READER_ERROR = exc
             with SAMPLE_BUFFER_CONDITION:
                 SAMPLE_BUFFER_CONDITION.notify_all()
-            maybe_print_comm_warning(f'USB stream reader stopped: {exc}')
+            maybe_print_comm_warning(f'\n\nUSB stream reader stopped: {exc}')
             return
 
 
@@ -426,59 +470,75 @@ def should_record():
 def record():
     print('Reading...')
     while True:
-        maybe_reload_config()
+        try:
+            maybe_reload_config()
 
-        if should_record():
-            if not DEVICE_STREAMING:
-                start_device_streaming()
+            if should_record():
+                if not DEVICE_STREAMING:
+                    start_device_streaming()
 
-            data = read_sample_chunk()
-            if len(data) != BYTES_PER_CHUNK:
-                print('Incomplete read:', len(data))
-                continue
-            samples = np.frombuffer(data, dtype='<i2')
+                data = read_sample_chunk()
+                if len(data) != BYTES_PER_CHUNK:
+                    print('Incomplete read:', len(data))
+                    continue
+                samples = np.frombuffer(data, dtype='<i2')
 
-            fft = np.fft.rfft(samples)
-            freqs = np.fft.rfftfreq(len(samples), d=1 / SAMPLE_RATE)
+                fft = np.fft.rfft(samples)
+                freqs = np.fft.rfftfreq(len(samples), d=1 / SAMPLE_RATE)
 
-            magnitude = np.abs(fft)
-            magnitude[0] = 0
+                magnitude = np.abs(fft)
+                magnitude[0] = 0
 
-            peak_idx = np.argmax(magnitude)
-            peak_freq = freqs[peak_idx]
+                peak_idx = np.argmax(magnitude)
+                peak_freq = freqs[peak_idx]
 
-            if peak_freq > THRESHOLD_FREQ:
-                print(f'Peak: {int(peak_freq)} Hz -> KEEP')
+                if peak_freq > THRESHOLD_FREQ:
+                    print(f'Peak: {int(peak_freq)} Hz -> KEEP')
 
-                filename = os.path.join(OUTPUT_DIR, f'chunk_{int(time.time())}.wav')
-                with wave.open(filename, 'wb') as wf:
-                    wf.setnchannels(1)
-                    wf.setsampwidth(2)
-                    wf.setframerate(SAMPLE_RATE)
-                    wf.writeframes(data)
-                print('Saved:', filename)
+                    filename = os.path.join(OUTPUT_DIR, f'chunk_{int(time.time())}.wav')
+                    with wave.open(filename, 'wb') as wf:
+                        wf.setnchannels(1)
+                        wf.setsampwidth(2)
+                        wf.setframerate(SAMPLE_RATE)
+                        wf.writeframes(data)
+
+                    INCOMING.put(filename)
+
+                    print('Saved:', filename)
+                else:
+                    print(f'Peak: {int(peak_freq)} Hz -> DISCARD')
             else:
-                print(f'Peak: {int(peak_freq)} Hz -> DISCARD')
-        else:
-            if DEVICE_STREAMING:
-                stop_device_streaming()
-            time.sleep(5)
+                if DEVICE_STREAMING:
+                    stop_device_streaming()
+                time.sleep(5)
+        except KeyboardInterrupt:
+            break
 
 
 def main():
-    setup()
-
     indicator = LED()
     indicator.start()
 
     feed = UART()
     feed.start()
 
-    record()
+    renderer = Spectrogram()
+    renderer.start()
 
+    try:
+        setup()
+        record()
+    finally:
+        print('\n\nShutting Down...')
+        if DEVICE_STREAMING:
+            stop_device_streaming()
+
+        time.sleep(1)
+
+        ser.close()  # Close port
+
+        time.sleep(1)
+        
 
 if __name__ == '__main__':
-    try:
-        main()
-    finally:
-        ser.close()  # Close port
+    main()
