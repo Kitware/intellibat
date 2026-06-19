@@ -52,11 +52,28 @@
 #define FRAME_MAGIC_2 'A'
 #define FRAME_MAGIC_3 'T'
 #define FRAME_HEADER_LEN 16u
-#define FRAME_SAMPLE_COUNT 1024u
+
+#ifndef FRAME_SAMPLE_COUNT
+#define FRAME_SAMPLE_COUNT 2048u
+#endif
+
 #define FRAME_PAYLOAD_LEN (FRAME_SAMPLE_COUNT * sizeof(int16_t))
 #define FRAME_TX_BUFFER_LEN (FRAME_HEADER_LEN + FRAME_PAYLOAD_LEN)
-#define CAPTURE_BLOCK_COUNT 64u
+
+#ifndef CAPTURE_BLOCK_COUNT
+#if defined(PICO_RP2350) && PICO_RP2350
+#define CAPTURE_BLOCK_COUNT 96u
+#else
+#define CAPTURE_BLOCK_COUNT 48u
+#endif
+#endif
+
 #define DMA_DISCARD_BLOCK UINT32_MAX
+
+_Static_assert(FRAME_SAMPLE_COUNT <= UINT16_MAX,
+               "FRAME_SAMPLE_COUNT must fit in the USB frame header");
+_Static_assert((FRAME_HEADER_LEN % sizeof(uint16_t)) == 0,
+               "Frame payload must remain 16-bit aligned");
 
 enum
 {
@@ -65,6 +82,13 @@ enum
   BLOCK_READY = 2,
   BLOCK_SENDING = 3,
 };
+
+typedef union
+{
+  uint8_t bytes[FRAME_TX_BUFFER_LEN];
+  uint16_t words[(FRAME_TX_BUFFER_LEN + sizeof(uint16_t) - 1u) /
+                 sizeof(uint16_t)];
+} frame_tx_buffer_t;
 
 static uint16_t capture_blocks[CAPTURE_BLOCK_COUNT][FRAME_SAMPLE_COUNT];
 static uint16_t discard_block[FRAME_SAMPLE_COUNT];
@@ -80,7 +104,7 @@ static uint32_t frame_sequence = 0;
 static uint32_t sample_rate_hz = DEFAULT_SAMPLE_RATE_HZ;
 static int32_t dc_estimate_q8 = 2048 * 256;
 static int dma_channel = -1;
-static uint8_t frame_tx_buffer[FRAME_TX_BUFFER_LEN];
+static frame_tx_buffer_t frame_tx_buffer;
 
 static void debug_puts(const char* message)
 {
@@ -94,13 +118,13 @@ static void debug_printf(const char* fmt, uint32_t value)
   debug_puts(buf);
 }
 
-static void store_u16_le(uint8_t* buffer, uint32_t offset, uint16_t value)
+static inline void store_u16_le(uint8_t* buffer, uint32_t offset, uint16_t value)
 {
   buffer[offset] = value & 0xffu;
   buffer[offset + 1u] = (value >> 8) & 0xffu;
 }
 
-static void store_u32_le(uint8_t* buffer, uint32_t offset, uint32_t value)
+static inline void store_u32_le(uint8_t* buffer, uint32_t offset, uint32_t value)
 {
   buffer[offset] = value & 0xffu;
   buffer[offset + 1u] = (value >> 8) & 0xffu;
@@ -108,7 +132,7 @@ static void store_u32_le(uint8_t* buffer, uint32_t offset, uint32_t value)
   buffer[offset + 3u] = (value >> 24) & 0xffu;
 }
 
-static int16_t convert_adc_sample(uint16_t raw)
+static inline int16_t convert_adc_sample(uint16_t raw)
 {
   int32_t raw_q8 = (int32_t)(raw & 0x0fffu) * 256;
   dc_estimate_q8 += (raw_q8 - dc_estimate_q8) >> 10;
@@ -333,15 +357,15 @@ static void build_frame_header(uint8_t* buffer, uint16_t sample_count)
   store_u32_le(buffer, 12, dropped_samples);
 }
 
-static void build_frame_samples(uint8_t* buffer,
+static void build_frame_samples(frame_tx_buffer_t* buffer,
                                 uint16_t* samples,
                                 uint16_t sample_count)
 {
+  uint16_t* payload =
+    &buffer->words[FRAME_HEADER_LEN / sizeof(buffer->words[0])];
+
   for (uint16_t i = 0; i < sample_count; i++) {
-    int16_t sample = convert_adc_sample(samples[i]);
-    store_u16_le(buffer,
-                 FRAME_HEADER_LEN + ((uint32_t)i * sizeof(int16_t)),
-                 (uint16_t)sample);
+    payload[i] = (uint16_t)convert_adc_sample(samples[i]);
   }
 }
 
@@ -373,10 +397,10 @@ static void drain_frames_to_usb(void)
     }
 
     block_state[block] = BLOCK_SENDING;
-    build_frame_header(frame_tx_buffer, FRAME_SAMPLE_COUNT);
+    build_frame_header(frame_tx_buffer.bytes, FRAME_SAMPLE_COUNT);
     build_frame_samples(
-      frame_tx_buffer, capture_blocks[block], FRAME_SAMPLE_COUNT);
-    write_usb_bytes(frame_tx_buffer, FRAME_TX_BUFFER_LEN);
+      &frame_tx_buffer, capture_blocks[block], FRAME_SAMPLE_COUNT);
+    write_usb_bytes(frame_tx_buffer.bytes, FRAME_TX_BUFFER_LEN);
     frame_sequence++;
     block_state[block] = BLOCK_FREE;
   }

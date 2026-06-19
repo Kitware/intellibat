@@ -12,7 +12,7 @@ The USB stream is framed so the Pi can verify byte alignment and detect drops:
 - Default sample rate: `384000` Hz
 - Channels: one mono ADC channel
 
-At 384 kHz, the Nyquist frequency is 192 kHz. The USB stream is about 512 KB/s
+At 384 kHz, the Nyquist frequency is 192 kHz. The USB stream is about 768 KB/s
 before USB serial and frame overhead.
 
 ## Wiring
@@ -50,9 +50,11 @@ recording window is active. The service strips frame headers before writing WAV
 data and warns if USB frame sequences skip or the Pico reports dropped ADC
 samples.
 
-The Pico uses 1024-sample DMA-backed ADC capture blocks so USB writes do not
-directly pace ADC sampling. If the Pi stops reading USB long enough for those
-blocks to fill, the dropped-sample counter will increase.
+The Pico uses 2048-sample DMA-backed ADC capture blocks so USB writes do not
+directly pace ADC sampling. On Pico 2/RP2350 builds, the default firmware keeps
+96 capture blocks queued, which is about 0.51 seconds of backlog at 384 kHz. If
+the Pi stops reading USB long enough for those blocks to fill, the
+dropped-sample counter will increase.
 
 The Pi recorder keeps a dedicated reader thread active while streaming so FFT
 processing and WAV writes do not pause USB reads.
@@ -60,10 +62,13 @@ processing and WAV writes do not pause USB reads.
 Frames are assembled into a contiguous binary buffer and written to USB in one
 driver call. Byte-at-a-time USB writes are too slow for 384 kHz audio.
 
+For reliable 384 kHz streaming, build optimized firmware. The CMake project
+defaults to `Release` when no explicit build type is provided.
+
 Before running the recorder, verify the stream from the Pi:
 
 ```sh
-python3 poc_service/utils/check_usb.py --port /dev/ttyACM0 --sample-rate 384000 --seconds 5
+python3 software/utils/check_usb.py --port /dev/ttyACM0 --sample-rate 384000 --seconds 5
 ```
 
 The observed sample rate should be close to 384000 Hz, `sequence_gaps` should be
@@ -84,18 +89,24 @@ Install the Pico SDK and toolchain, then build:
 
 ```sh
 cd firmware/src
+
 mkdir -p build
 cd build
-cmake -D PICO_SDK_FETCH_FROM_GIT=1 -DPICO_BOARD=pico2 ..
+
+cmake ..
 make -j4
+
 cp adc.uf2 ../../
 ```
 
 To flash, hold the Pico `BOOTSEL` button while plugging it in, then copy:
 
 ```sh
-cp firmware/flash_nuke.uf2 /media/kitware/RP2350/
-cp firmware/adc.uf2 /media/kitware/RP2350/
+cp firmware/flash_nuke.uf2 /media/$USER/RP2350/
+
+# Wait for device to remount
+
+cp firmware/adc.uf2 /media/$USER/RP2350/
 ```
 
 On Linux the mount path is commonly `/media/<user>/RP2350/`.
