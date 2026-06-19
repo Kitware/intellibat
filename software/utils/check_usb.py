@@ -54,7 +54,7 @@ def main():
     )
     parser.add_argument('--port', default='/dev/ttyACM0')
     parser.add_argument('--baud', type=int, default=115200)
-    parser.add_argument('--sample-rate', type=int, default=256000)
+    parser.add_argument('--sample-rate', type=int, default=384000)
     parser.add_argument('--seconds', type=float, default=5.0)
     args = parser.parse_args()
 

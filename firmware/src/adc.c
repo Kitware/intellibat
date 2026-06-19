@@ -15,7 +15,7 @@
 #include "pico/stdlib.h"
 
 #ifndef DEFAULT_SAMPLE_RATE_HZ
-#define DEFAULT_SAMPLE_RATE_HZ 256000
+#define DEFAULT_SAMPLE_RATE_HZ 384000
 #endif
 
 #ifndef ADC_GPIO
@@ -44,7 +44,7 @@
 
 #define CMD_BUFFER_LEN 32u
 #define MIN_SAMPLE_RATE_HZ 1000u
-#define MAX_SAMPLE_RATE_HZ 256000u
+#define MAX_SAMPLE_RATE_HZ 384000u
 #define ADC_CLOCK_HZ 48000000.0f
 
 #define FRAME_MAGIC_0 'I'

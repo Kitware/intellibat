@@ -9,10 +9,10 @@ The USB stream is framed so the Pi can verify byte alignment and detect drops:
 - USB device: usually `/dev/ttyACM0` on the Raspberry Pi
 - Frame header: `IBAT` magic, uint32 sequence, uint16 sample count, uint16 flags, uint32 dropped sample count
 - Sample payload: little-endian signed 16-bit (`<i2`)
-- Default sample rate: `256000` Hz
+- Default sample rate: `384000` Hz
 - Channels: one mono ADC channel
 
-At 256 kHz, the Nyquist frequency is 128 kHz. The USB stream is about 512 KB/s
+At 384 kHz, the Nyquist frequency is 192 kHz. The USB stream is about 512 KB/s
 before USB serial and frame overhead.
 
 ## Wiring
@@ -38,7 +38,7 @@ Send commands as ASCII text ending in `\n`:
 
 - `START`: begin sampling and streaming
 - `STOP`: stop streaming and clear queued samples
-- `SET_SR:<hz>`: set sample rate, clamped to 1000-256000 Hz
+- `SET_SR:<hz>`: set sample rate, clamped to 128000-384000 Hz
 - `STATUS`: emit status on the UART debug port
 
 Debug/status responses intentionally go to UART so they do not corrupt the raw
@@ -58,36 +58,47 @@ The Pi recorder keeps a dedicated reader thread active while streaming so FFT
 processing and WAV writes do not pause USB reads.
 
 Frames are assembled into a contiguous binary buffer and written to USB in one
-driver call. Byte-at-a-time USB writes are too slow for 256 kHz audio.
+driver call. Byte-at-a-time USB writes are too slow for 384 kHz audio.
 
 Before running the recorder, verify the stream from the Pi:
 
 ```sh
-python3 poc_service/check.py --port /dev/ttyACM0 --sample-rate 256000 --seconds 5
+python3 poc_service/utils/check_usb.py --port /dev/ttyACM0 --sample-rate 384000 --seconds 5
 ```
 
-The observed sample rate should be close to 256000 Hz, `sequence_gaps` should be
+The observed sample rate should be close to 384000 Hz, `sequence_gaps` should be
 0, and `pico_dropped_samples` should stay 0.
+
+## Raspberry Pi 5 Configuration
+
+First, enable UART in the firmware configuration file and and reboot the Raspberry Pi 5.
+
+```sh
+sudo cp boot_firmware_config.txt /boot/firmware/config.txt
+reboot
+```
 
 ## Build
 
 Install the Pico SDK and toolchain, then build:
 
 ```sh
-cd pico_firmware
+cd firmware/src
 mkdir -p build
 cd build
 cmake -D PICO_SDK_FETCH_FROM_GIT=1 -DPICO_BOARD=pico2 ..
 make -j4
+cp adc.uf2 ../../
 ```
 
 To flash, hold the Pico `BOOTSEL` button while plugging it in, then copy:
 
 ```sh
-cp adc.uf2 /Volumes/RPI-RP2/
+cp firmware/flash_nuke.uf2 /media/kitware/RP2350/
+cp firmware/adc.uf2 /media/kitware/RP2350/
 ```
 
-On Linux the mount path is commonly `/media/<user>/RPI-RP2/`.
+On Linux the mount path is commonly `/media/<user>/RP2350/`.
 
 ## Configuration
 
@@ -95,7 +106,7 @@ The default compile-time settings live in `CMakeLists.txt`:
 
 - `ADC_GPIO=26`
 - `ADC_CHANNEL=0`
-- `DEFAULT_SAMPLE_RATE_HZ=256000`
+- `DEFAULT_SAMPLE_RATE_HZ=384000`
 - `DEBUG_UART_TX_PIN=0`
 - `DEBUG_UART_RX_PIN=1`
 - `DEBUG_UART_BAUD=115200`

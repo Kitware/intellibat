@@ -22,6 +22,7 @@ Not supported:
     - chunk_size: size of audio chunks to save to disc
 """
 
+import atexit
 import json
 import os
 import struct
@@ -31,6 +32,7 @@ import time
 import wave
 from datetime import datetime
 from pathlib import Path
+from threading import Thread
 
 import numpy as np
 import serial
@@ -40,7 +42,7 @@ PORT = '/dev/ttyACM0'
 BAUD = 115200
 
 # Configurable settings
-SAMPLE_RATE = 256000
+SAMPLE_RATE = 384000
 THRESHOLD_FREQ = 1200
 SAMPLE_RATE_KEY = 'sample_rate'
 THRESHOLD_FREQ_KEY = 'threshold_freq'
@@ -84,6 +86,89 @@ ser = serial.Serial(
     PORT, BAUD, timeout=SERIAL_TIMEOUT_SECONDS, write_timeout=SERIAL_TIMEOUT_SECONDS
 )
 time.sleep(3)
+
+
+class LED(Thread):
+    def __init__(self):
+        from gpiozero import RGBLED
+
+        Thread.__init__(self)
+        self.name = 'led'
+        self.daemon = True
+
+        self.gpio_red = 17
+        self.gpio_green = 27
+        self.gpio_blue = 22
+
+        # Smaller delay = smoother/faster updates
+        self.step_delay = 0.02
+
+        # Larger number = smoother color transition
+        self.steps_per_cycle = 360
+        assert isinstance(self.steps_per_cycle, int)
+        assert self.steps_per_cycle > 0
+
+        # Use active_high=True for common-cathode modules.
+        # If colors are inverted or the LED is on when it should be off,
+        # change this to active_high=False.
+        self.led = RGBLED(
+            red=self.gpio_red,
+            green=self.gpio_green,
+            blue=self.gpio_blue,
+            active_high=True,
+        )
+
+        # Run the shutdown function to close all open things when
+        # the process is terminated
+        atexit.register(self.shutdown)
+
+    def shutdown(self):
+        self.led.off()
+
+    def run(self):
+        import colorsys
+
+        while True:
+            try:
+                for step in range(self.steps_per_cycle):
+                    hue = step / self.steps_per_cycle
+
+                    # hsv_to_rgb returns red, green, blue values from 0.0 to 1.0
+                    red, green, blue = colorsys.hsv_to_rgb(hue, 1.0, 1.0)
+
+                    self.led.color = (red, green, blue)
+
+                    time.sleep(self.step_delay)
+            except Exception:
+                pass
+
+
+class UART(Thread):
+    def __init__(self):
+        Thread.__init__(self)
+        self.name = 'led'
+        self.daemon = True
+
+        self.baud_rate = 115200
+        self.uart1 = serial.Serial('/dev/ttyAMA1', self.baud_rate, timeout=0.5)
+
+        # Run the shutdown function to close all open things when
+        # the process is terminated
+        atexit.register(self.shutdown)
+
+    def shutdown(self):
+        self.uart1.close()  # Close port
+
+    def run(self):
+        time.sleep(0.5)  # Allow time for connection
+        while True:
+            if self.uart1.in_waiting > 0:
+                try:
+                    line = self.uart1.readline()
+                    message = line.decode('utf-8').rstrip()
+                    print(f'[UART1] {message}')
+                except Exception:
+                    print('[UART1] ERROR: Failed to decode message')
 
 
 def update_chunk_dimensions():
@@ -286,7 +371,7 @@ def setup():
         with open(CONFIG_PATH, 'w') as f:
             json.dump(
                 {
-                    SAMPLE_RATE_KEY: 256000,
+                    SAMPLE_RATE_KEY: 384000,
                     THRESHOLD_FREQ_KEY: 1200,
                     START_TIME_KEY: '17:00',
                     END_TIME_KEY: '05:30',
@@ -382,8 +467,18 @@ def record():
 
 def main():
     setup()
+
+    indicator = LED()
+    indicator.start()
+
+    feed = UART()
+    feed.start()
+
     record()
 
 
 if __name__ == '__main__':
-    main()
+    try:
+        main()
+    finally:
+        ser.close()  # Close port

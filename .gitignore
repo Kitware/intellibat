@@ -208,3 +208,9 @@ __marimo__/
 
 # macOS
 .DS_Store
+
+# Project
+poc_service/config.json
+test_recordings/
+assets/
+reference/

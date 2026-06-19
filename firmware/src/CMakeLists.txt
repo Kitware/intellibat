@@ -48,7 +48,7 @@ add_executable(adc adc.c)
 
 target_compile_definitions(
   adc
-  PRIVATE DEFAULT_SAMPLE_RATE_HZ=256000
+  PRIVATE DEFAULT_SAMPLE_RATE_HZ=384000
           ADC_GPIO=26
           ADC_CHANNEL=0
           DEBUG_UART=uart0
