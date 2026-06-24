@@ -1,0 +1,87 @@
+# See https://pre-commit.com for more information
+# See https://pre-commit.com/hooks.html for more hooks
+repos:
+  - repo: https://github.com/lovesegfault/beautysh
+    rev: v6.2.1
+    hooks:
+      - id: beautysh
+        name: Beautysh for Bash scripts
+        args: ["--indent-size", "4"]
+  - repo: https://github.com/igorshubovych/markdownlint-cli
+    rev: v0.39.0
+    hooks:
+      - id: markdownlint-fix-docker
+        name: MarkdownLint for Markdown files
+        args: ["'--fix", "--disable", "MD013"]
+  - repo: https://github.com/asottile/pyupgrade
+    rev: v3.15.2
+    hooks:
+      - id: pyupgrade
+        name: PyUpgrade for Python code versions
+  - repo: https://github.com/pycqa/isort
+    rev: 5.13.2
+    hooks:
+      - id: isort
+        name: iSort for Python imports
+        args: ["--profile", "black", "--filter-files"]
+  - repo: https://github.com/psf/black
+    rev: 24.4.0
+    hooks:
+      - id: black
+        name: Black for Python code formatting
+        language_version: python3.9
+        args: ["--skip-string-normalization"]
+  - repo: https://github.com/pycqa/flake8
+    rev: 7.0.0
+    hooks:
+      - id: flake8
+        name: Flake8 for Python code linting
+  # - repo: https://github.com/cheshirekow/cmake-format-precommit
+  #   rev: v0.6.13
+  #   hooks:
+  #     - id: cmake-format
+  #     - id: cmake-lint
+  - repo: https://github.com/sirwart/ripsecrets
+    rev: v0.1.7
+    hooks:
+      - id: ripsecrets
+        name: RIPSecrets for API keys and secrets
+  # - repo: local
+  #   hooks:
+  #   - id: pylint
+  #     name: pylint
+  #     entry: pylint
+  #     language: system
+  #     types: [python]
+  #     args:
+  #       [
+  #         "-rn", # Only display messages
+  #         "-sn", # Don't display the score
+  #         "--rcfile=.pylintrc",
+  #       ]
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v4.6.0
+    hooks:
+      - id: double-quote-string-fixer
+        name: Format single quotes
+      - id: requirements-txt-fixer
+        name: Format requirements.txt
+      - id: pretty-format-json
+        name: Format JSON files
+        args: ["--autofix"]
+      - id: check-yaml
+        name: Format YAML files
+        args: ['--unsafe']
+      - id: trailing-whitespace
+        name: Fix Whitespace
+      - id: mixed-line-ending
+        name: Fix EOL
+        args: ['--fix=lf']
+      - id: end-of-file-fixer
+        name: Fix EOF
+      - id: check-executables-have-shebangs
+        name: Ensure executables have directive
+      - id: check-shebang-scripts-are-executable
+        name: Ensure directives are executable
+      - id: detect-private-key
+        name: Ensure no private keys

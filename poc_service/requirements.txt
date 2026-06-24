@@ -1,4 +1,0 @@
-numpy
-pyserial
-textual
-click

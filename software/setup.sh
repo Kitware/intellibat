@@ -39,4 +39,3 @@ sudo cp ./intellibat.service /etc/systemd/system/intellibat.service
 sudo systemctl daemon-reload
 sudo systemctl enable intellibat
 sudo systemctl restart intellibat
-
