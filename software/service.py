@@ -32,8 +32,8 @@ import time
 import wave
 from datetime import datetime
 from pathlib import Path
-from threading import Thread
 from queue import Queue
+from threading import Thread
 
 import numpy as np
 import serial
@@ -167,7 +167,7 @@ class UART(Thread):
 
     def shutdown(self):
         self.enabled = False
-        time.sleep(0.1)        
+        time.sleep(0.1)
         self.uart1.close()  # Close port
 
     def run(self):
@@ -538,7 +538,7 @@ def main():
         ser.close()  # Close port
 
         time.sleep(1)
-        
+
 
 if __name__ == '__main__':
     main()

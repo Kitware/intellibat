@@ -1,24 +1,18 @@
 import json
-import os
-import pickle
+import random
 from pathlib import Path
 
 import cv2
-import matplotlib.patches as patches
-import matplotlib.pyplot as plt
 import numpy as np
 import onnx
 import torch
 import tqdm
-from sklearn import metrics
-
-# pip install matplotlib
 
 NUM_GPUS = 4
 WORKERS = 4
 ONNX_BATCH_SIZE = 10
 
-CUSTOM_LABEL = "NOISE"
+CUSTOM_LABEL = 'NOISE'
 
 
 class Dataset(torch.utils.data.Dataset):
@@ -96,13 +90,13 @@ def worker(inputs):
 
     session = ort.InferenceSession(
         onnx_filename,
-        providers=["CPUExecutionProvider"],
+        providers=['CPUExecutionProvider'],
     )
 
     chunksize = ONNX_BATCH_SIZE
     predictions = {}
     for paths, inputs in tqdm.tqdm(
-        dataloader, desc=f"Device: {device_id}", position=position
+        dataloader, desc=f'Device: {device_id}', position=position
     ):
         b, h, w, c = inputs.shape
         assert len(paths) == 1
@@ -131,7 +125,7 @@ def worker(inputs):
         for chunk in chunks:
             outputs_ = session.run(
                 None,
-                {"input": chunk},
+                {'input': chunk},
             )
             outputs.append(outputs_[0])
         outputs = np.vstack(outputs)
@@ -141,19 +135,18 @@ def worker(inputs):
     return None, predictions
 
 
-print("Running inference")
+print('Running inference')
 
-predictions_onnx_model = "model.mobilenet.onnx"
+predictions_onnx_model = 'model.mobilenet.onnx'
 
-paths = Path("examples.timing.output").rglob("*.jpg")
+paths = Path('examples.timing.output').rglob('*.jpg')
 paths = [str(path.absolute()) for path in paths]
 
-import random
 random.shuffle(paths)
 model = onnx.load(predictions_onnx_model)
 mapping = json.loads(model.metadata_props[0].value)
 
-print("\trunning inference on tiles")
+print('\trunning inference on tiles')
 chunks = np.array_split(paths, NUM_GPUS)
 
 inputs = [
@@ -168,12 +161,12 @@ parallel(
     quiet=True,
 )
 
-custom_index = mapping["backward"].get(CUSTOM_LABEL, None)
+custom_index = mapping['backward'].get(CUSTOM_LABEL, None)
 confs = np.array([predictions[path] for path in paths])
 preds = np.argmax(confs, axis=1)
 
-labels = list(range(len(mapping["forward"])))
-display = [mapping["forward"][str(index)] for index in range(len(mapping["forward"]))]
+labels = list(range(len(mapping['forward'])))
+display = [mapping['forward'][str(index)] for index in range(len(mapping['forward']))]
 
 for path, pred, conf in zip(paths, preds, confs):
     print(path, display[pred], conf[pred])

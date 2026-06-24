@@ -1,13 +1,14 @@
+import wave
 from pathlib import Path
+
 import numpy as np
 import tqdm
-import wave
 
 # Target the current working directory
 path = Path.cwd()
 
 # Find all text files in the current folder
-wav_files = list(path.glob("chunk*.wav"))
+wav_files = list(path.glob('chunk*.wav'))
 wav_files = sorted([temp.name for temp in wav_files])
 print(wav_files)
 
@@ -22,13 +23,15 @@ for val in tqdm.tqdm(list(range(first, last + 1, 2))):
     if Path(chunk).exists():
         found += 1
 
-        with wave.open(chunk, "rb") as wav_file:
+        with wave.open(chunk, 'rb') as wav_file:
             # 2. Extract metadata
-            channels = wav_file.getnchannels()      # 1 for mono, 2 for stereo
-            sample_width = wav_file.getsampwidth()  # Bytes per sample (e.g., 2 for 16-bit)
-            sample_rate = wav_file.getframerate()   # Sampling frequency (e.g., 44100)
-            total_frames = wav_file.getnframes()    # Total number of audio frames
-            
+            channels = wav_file.getnchannels()  # 1 for mono, 2 for stereo
+            sample_width = (
+                wav_file.getsampwidth()
+            )  # Bytes per sample (e.g., 2 for 16-bit)
+            sample_rate = wav_file.getframerate()  # Sampling frequency (e.g., 44100)
+            total_frames = wav_file.getnframes()  # Total number of audio frames
+
             # print(f"Channels: {channels}")
             # print(f"Sample Width: {sample_width} bytes")
             # print(f"Sample Rate: {sample_rate} Hz")
