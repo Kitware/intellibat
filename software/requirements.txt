@@ -2,3 +2,5 @@ click
 numpy
 pyserial
 textual
+gpiozero
+batbot
