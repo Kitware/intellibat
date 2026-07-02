@@ -1,7 +1,7 @@
 from enum import StrEnum
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field
 
 
 class RecordingFormat(StrEnum):
@@ -56,31 +56,3 @@ class IntelliBatConfig(BaseModel):
     )
 
     schedule_mode: ScheduleMode
-
-
-def build_schema(model):
-    schema = {}
-
-    for name, field in model.model_fields.items():
-
-        annotation = field.annotation
-
-        options = None
-        if getattr(annotation, "__origin__", None) is Literal:
-            options = list(annotation.__args__)
-
-        schema[name] = {
-            "name": name,
-            "type": annotation.__name__,
-            "description": field.description,
-            "ge": getattr(field, "ge", None),
-            "le": getattr(field, "le", None),
-            "options": options
-        }
-
-    print(schema)
-
-    return schema
-
-
-intellibat_config_schema = build_schema(IntelliBatConfig)
