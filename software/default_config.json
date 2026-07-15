@@ -1,6 +1,14 @@
 {
-  "end_time": "05:30",
-  "sample_rate": 256000,
-  "start_time": "17:00",
-  "threshold_freq": 1200
+    "recording_format": "full_spectrum",
+    "sample_rate": 256000,
+    "triggered_recording": true,
+    "minimum_trigger_frequency": 20,
+    "maximum_recording_length": 15,
+    "trigger_window": 5,
+    "save_noise_files": false,
+    "latitude": 0,
+    "longitude": 0,
+    "schedule_mode": "custom",
+    "start_time": "17:00",
+    "end_time": "05:00"
 }

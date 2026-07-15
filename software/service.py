@@ -38,26 +38,21 @@ from threading import Thread
 import numpy as np
 import serial
 
+from intellibat_config import ConfigManager
+
 # Hardware/serial related constants (future configurable)
 PORT = '/dev/ttyACM0'
 BAUD = 115200
 
 INCOMING = Queue()
 
-# Configurable settings
-SAMPLE_RATE = 384000
-THRESHOLD_FREQ = 1200
-SAMPLE_RATE_KEY = 'sample_rate'
-THRESHOLD_FREQ_KEY = 'threshold_freq'
-RECORDING_START_TIME = datetime.strptime('17:00', '%H:%M').time()
-RECORDING_END_TIME = datetime.strptime('05:30', '%H:%M').time()
-START_TIME_KEY = 'start_time'
-END_TIME_KEY = 'end_time'
-CONFIG_KEYS = [SAMPLE_RATE_KEY, THRESHOLD_FREQ_KEY, START_TIME_KEY, END_TIME_KEY]
+# Configuration
+CONFIG_PATH = Path('config.json')
+config_manager = ConfigManager.from_file(CONFIG_PATH)
 
 CHUNK_SECONDS = 5
 BYTES_PER_SAMPLE = 2
-SAMPLES_PER_CHUNK = SAMPLE_RATE * CHUNK_SECONDS
+SAMPLES_PER_CHUNK = config_manager.config.sample_rate * CHUNK_SECONDS
 BYTES_PER_CHUNK = SAMPLES_PER_CHUNK * BYTES_PER_SAMPLE
 
 FRAME_MAGIC = b'IBAT'
@@ -82,7 +77,6 @@ STREAM_READER_ERROR = None
 SAMPLE_BUFFER_CONDITION = threading.Condition()
 
 OUTPUT_DIR = 'test_recordings'
-CONFIG_PATH = Path('config.json')
 os.makedirs(OUTPUT_DIR, exist_ok=True)
 
 ser = serial.Serial(
@@ -212,7 +206,7 @@ class Spectrogram(Thread):
 def update_chunk_dimensions():
     global SAMPLES_PER_CHUNK
     global BYTES_PER_CHUNK
-    SAMPLES_PER_CHUNK = SAMPLE_RATE * CHUNK_SECONDS
+    SAMPLES_PER_CHUNK = config_manager.config.sample_rate * CHUNK_SECONDS
     BYTES_PER_CHUNK = SAMPLES_PER_CHUNK * BYTES_PER_SAMPLE
 
 
@@ -274,9 +268,9 @@ def configure_device_sample_rate():
     was_streaming = DEVICE_STREAMING
 
     stop_device_streaming()
-    write_device_command(f'SET_SR:{SAMPLE_RATE}')
+    write_device_command(f'SET_SR:{config_manager.config.sample_rate}')
     ser.reset_input_buffer()
-    CONFIGURED_SAMPLE_RATE = SAMPLE_RATE
+    CONFIGURED_SAMPLE_RATE = config_manager.config.sample_rate
 
     if was_streaming:
         start_device_streaming()
@@ -347,7 +341,7 @@ def append_next_frame_samples():
 
 
 def append_sample_payload(payload: bytes):
-    max_pending_bytes = SAMPLE_RATE * BYTES_PER_SAMPLE * MAX_PENDING_SECONDS
+    max_pending_bytes = config_manager.config.sample_rate * BYTES_PER_SAMPLE * MAX_PENDING_SECONDS
 
     with SAMPLE_BUFFER_CONDITION:
         PENDING_SAMPLE_BYTES.extend(payload)
@@ -398,14 +392,6 @@ def read_sample_chunk() -> bytes:
         return data
 
 
-def validate_config(config: dict) -> bool:
-    required_keys = CONFIG_KEYS
-    missing = [k for k in required_keys if k not in config]
-    for m in missing:
-        print(f'Config missing key {m}.')
-    return not missing
-
-
 def setup():
     print('Setting up...')
     # Try and find the settings file
@@ -415,10 +401,18 @@ def setup():
         with open(CONFIG_PATH, 'w') as f:
             json.dump(
                 {
-                    SAMPLE_RATE_KEY: 384000,
-                    THRESHOLD_FREQ_KEY: 1200,
-                    START_TIME_KEY: '17:00',
-                    END_TIME_KEY: '05:30',
+                    "recording_format": "full_spectrum",
+                    "sample_rate": 256000,
+                    "triggered_recording": True,
+                    "minimum_trigger_frequency": 20,
+                    "maximum_recording_length": 15,
+                    "trigger_window": 5,
+                    "save_noise_files": False,
+                    "latitude": 0,
+                    "longitude": 0,
+                    "schedule_mode": "custom",
+                    "start_time": "17:00",
+                    "end_time": "05:00"
                 },
                 f,
                 indent=2,
@@ -430,20 +424,10 @@ def setup():
     # Config path exists
     with open(CONFIG_PATH) as f:
         config = json.load(f)
-        config_valid = validate_config(config)
-        if not config_valid:
-            print('Invalid config. Please fix the errors and restart the service.')
-            sys.exit(1)
-        global SAMPLE_RATE
-        global THRESHOLD_FREQ
-        global RECORDING_START_TIME
-        global RECORDING_END_TIME
-        SAMPLE_RATE = config[SAMPLE_RATE_KEY]
-        THRESHOLD_FREQ = config[THRESHOLD_FREQ_KEY]
-        RECORDING_START_TIME = datetime.strptime(config[START_TIME_KEY], '%H:%M').time()
-        RECORDING_END_TIME = datetime.strptime(config[END_TIME_KEY], '%H:%M').time()
+        config_manager.update(config)
+
         update_chunk_dimensions()
-        if CONFIGURED_SAMPLE_RATE != SAMPLE_RATE:
+        if config_manager.config.sample_rate != CONFIGURED_SAMPLE_RATE:
             configure_device_sample_rate()
 
         global LAST_RELOAD_TIME
@@ -459,12 +443,14 @@ def maybe_reload_config():
 
 def should_record():
     now = datetime.now().time()
+    start_time = config_manager.config.start_time
+    end_time = config_manager.config.end_time
 
-    if RECORDING_START_TIME < RECORDING_END_TIME:
-        return RECORDING_START_TIME <= now < RECORDING_END_TIME
+    if start_time < end_time:
+        return start_time <= now < end_time
 
     # Handle a range that crosses midnight
-    return now >= RECORDING_START_TIME or now < RECORDING_END_TIME
+    return now >= start_time or now < end_time
 
 
 def record():
@@ -484,7 +470,7 @@ def record():
                 samples = np.frombuffer(data, dtype='<i2')
 
                 fft = np.fft.rfft(samples)
-                freqs = np.fft.rfftfreq(len(samples), d=1 / SAMPLE_RATE)
+                freqs = np.fft.rfftfreq(len(samples), d=1 / config_manager.config.sample_rate)
 
                 magnitude = np.abs(fft)
                 magnitude[0] = 0
@@ -492,14 +478,14 @@ def record():
                 peak_idx = np.argmax(magnitude)
                 peak_freq = freqs[peak_idx]
 
-                if peak_freq > THRESHOLD_FREQ:
+                if peak_freq > config_manager.config.minimum_trigger_frequency * 1000:
                     print(f'Peak: {int(peak_freq)} Hz -> KEEP')
 
                     filename = os.path.join(OUTPUT_DIR, f'chunk_{int(time.time())}.wav')
                     with wave.open(filename, 'wb') as wf:
                         wf.setnchannels(1)
                         wf.setsampwidth(2)
-                        wf.setframerate(SAMPLE_RATE)
+                        wf.setframerate(config_manager.config.sample_rate)
                         wf.writeframes(data)
 
                     INCOMING.put(filename)
