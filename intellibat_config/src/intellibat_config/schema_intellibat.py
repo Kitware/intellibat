@@ -1,3 +1,4 @@
+from datetime import time
 from enum import StrEnum
 from typing import Literal
 
@@ -14,9 +15,10 @@ class ScheduleMode(StrEnum):
     SUNSET_MINUS_30_TO_SUNRISE_PLUS_30 = (
         "sunset_minus_30_to_sunrise_plus_30"
     )
+    CUSTOM = "custom"
 
 
-class IntelliBatConfig(BaseModel):
+class IntellibatConfig(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     recording_format: RecordingFormat = RecordingFormat.FULL_SPECTRUM
@@ -56,3 +58,7 @@ class IntelliBatConfig(BaseModel):
     )
 
     schedule_mode: ScheduleMode
+
+    start_time: time
+
+    end_time: time

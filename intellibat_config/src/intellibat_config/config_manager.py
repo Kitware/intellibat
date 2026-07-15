@@ -1,12 +1,12 @@
 import json
 from pathlib import Path
 
-from schema_intellibat import IntelliBatConfig
+from .schema_intellibat import IntellibatConfig
 
 
 class ConfigManager:
 
-    def __init__(self, config: IntelliBatConfig, path: Path):
+    def __init__(self, config: IntellibatConfig, path: Path):
         self._config = config
         self._path = path
 
@@ -15,18 +15,18 @@ class ConfigManager:
         if file.exists():
             with open(file, 'r') as f:
                 config_data = json.load(f)
-            config = IntelliBatConfig.model_validate(config_data)
+            config = IntellibatConfig.model_validate(config_data)
         else:
-            config = IntelliBatConfig()
+            config = IntellibatConfig()
         return cls(config, file)
 
     @property
-    def config(self):
+    def config(self) -> IntellibatConfig:
         return self._config
 
-    def update(self, data: dict) -> IntelliBatConfig:
+    def update(self, data: dict) -> IntellibatConfig:
         updated = self._config.model_copy(update=data)
-        validated = IntelliBatConfig.model_validate(updated)
+        validated = IntellibatConfig.model_validate(updated)
 
         self._config = validated
         self._write()
