@@ -410,7 +410,9 @@ def setup():
                     "save_noise_files": False,
                     "latitude": 0,
                     "longitude": 0,
-                    "schedule_mode": "sunset_to_sunrise"
+                    "schedule_mode": "custom",
+                    "start_time": "17:00",
+                    "end_time": "05:00"
                 },
                 f,
                 indent=2,
