@@ -25,10 +25,12 @@ class ConfigManager:
         return self._config
 
     def update(self, data: dict) -> IntellibatConfig:
-        updated = self._config.model_copy(update=data)
-        validated = IntellibatConfig.model_validate(updated)
+        merged = {
+            **self._config.model_dump(),
+            **data,
+        }
 
-        self._config = validated
+        self._config = IntellibatConfig.model_validate(merged)
         self._write()
         return self._config
 
