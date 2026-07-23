@@ -31,6 +31,7 @@ import threading
 import time
 import wave
 from datetime import datetime
+from enum import Enum
 from pathlib import Path
 from queue import Queue
 from threading import Thread
@@ -50,7 +51,7 @@ INCOMING = Queue()
 CONFIG_PATH = Path('config.json')
 config_manager = ConfigManager.from_file(CONFIG_PATH)
 
-CHUNK_SECONDS = 5
+CHUNK_SECONDS = 1
 BYTES_PER_SAMPLE = 2
 SAMPLES_PER_CHUNK = config_manager.config.sample_rate * CHUNK_SECONDS
 BYTES_PER_CHUNK = SAMPLES_PER_CHUNK * BYTES_PER_SAMPLE
@@ -83,6 +84,71 @@ ser = serial.Serial(
     PORT, BAUD, timeout=SERIAL_TIMEOUT_SECONDS, write_timeout=SERIAL_TIMEOUT_SECONDS
 )
 time.sleep(1)
+
+
+class RecordingState(Enum):
+    IDLE = 1
+    RECORDING = 2
+
+
+class RecordingStateMachine:
+    def __init__(self, config_manager, spectrogram_queue):
+        self.state = RecordingState.IDLE
+        self.config_manager = config_manager
+        self.spectrogram_queue = spectrogram_queue
+        self.current_recording = None
+        self.filename = None
+        self.chunks_written = 0
+
+    @property
+    def idle(self):
+        return self.state == RecordingState.IDLE
+
+    @property
+    def recording(self):
+        return self.state == RecordingState.RECORDING
+
+    def begin_recording(self, current_recording, filename):
+        if self.state == RecordingState.RECORDING:
+            return
+        self.state = RecordingState.RECORDING
+        self.current_recording = current_recording
+        self.filename = filename
+        self.chunks_written = 0
+        self.last_triggered = time.monotonic()  # assume recording starts with a bat call
+
+    def stop_recording(self):
+        print(f"Stopping recording for {self.filename}. Recorded {self.chunks_written} seconds")
+        if self.current_recording:
+            self.current_recording.close()
+            if self.filename:
+                self.spectrogram_queue.put(self.filename)
+
+        self.state = RecordingState.IDLE
+        self.current_recording = None
+        self.filename = None
+        self.chunks_written = 0
+
+    def handle_chunk(self, data, triggered):
+        if self.state == RecordingState.IDLE:
+            return
+
+        if self.current_recording:
+            self.current_recording.writeframes(data)
+            self.chunks_written += 1
+
+        if self.chunks_written >= self.config_manager.config.maximum_recording_length:
+            print("Maximum file size reached...")
+            self.stop_recording()
+            return
+
+        if triggered:
+            self.last_triggered = time.monotonic()
+        else:
+            time_since_trigger = time.monotonic() - self.last_triggered
+            if time_since_trigger > self.config_manager.config.trigger_window:
+                print("Trigger window elapsed...")
+                self.stop_recording()
 
 
 class LED(Thread):
@@ -453,8 +519,24 @@ def should_record():
     return now >= start_time or now < end_time
 
 
+def chunk_triggers(data):
+    samples = np.frombuffer(data, dtype='<i2')
+
+    fft = np.fft.rfft(samples)
+    freqs = np.fft.rfftfreq(len(samples), d=1 / config_manager.config.sample_rate)
+
+    magnitude = np.abs(fft)
+    magnitude[0] = 0
+
+    peak_idx = np.argmax(magnitude)
+    peak_freq = freqs[peak_idx]
+
+    return peak_freq > config_manager.config.minimum_trigger_frequency * 1000
+
+
 def record():
     print('Reading...')
+    recorder = RecordingStateMachine(config_manager=config_manager, spectrogram_queue=INCOMING)
     while True:
         try:
             maybe_reload_config()
@@ -467,32 +549,22 @@ def record():
                 if len(data) != BYTES_PER_CHUNK:
                     print('Incomplete read:', len(data))
                     continue
-                samples = np.frombuffer(data, dtype='<i2')
 
-                fft = np.fft.rfft(samples)
-                freqs = np.fft.rfftfreq(len(samples), d=1 / config_manager.config.sample_rate)
+                triggers = chunk_triggers(data)
 
-                magnitude = np.abs(fft)
-                magnitude[0] = 0
-
-                peak_idx = np.argmax(magnitude)
-                peak_freq = freqs[peak_idx]
-
-                if peak_freq > config_manager.config.minimum_trigger_frequency * 1000:
-                    print(f'Peak: {int(peak_freq)} Hz -> KEEP')
-
-                    filename = os.path.join(OUTPUT_DIR, f'chunk_{int(time.time())}.wav')
-                    with wave.open(filename, 'wb') as wf:
-                        wf.setnchannels(1)
-                        wf.setsampwidth(2)
-                        wf.setframerate(config_manager.config.sample_rate)
-                        wf.writeframes(data)
-
-                    INCOMING.put(filename)
-
-                    print('Saved:', filename)
-                else:
-                    print(f'Peak: {int(peak_freq)} Hz -> DISCARD')
+                if recorder.recording:
+                    print(f"Recording in progress. Adding data to {recorder.filename}")
+                    recorder.handle_chunk(data, triggers)
+                else:  # Recorder is idle
+                    if triggers:
+                        filename = os.path.join(OUTPUT_DIR, f'chunk_{int(time.time())}.wav')
+                        print(f"High frequency detected. Recording to file {filename}")
+                        wav_file = wave.open(filename, 'wb')
+                        wav_file.setnchannels(1)
+                        wav_file.setsampwidth(2)
+                        wav_file.setframerate(config_manager.config.sample_rate)
+                        recorder.begin_recording(wav_file, filename)
+                        recorder.handle_chunk(data, True)
             else:
                 if DEVICE_STREAMING:
                     stop_device_streaming()
