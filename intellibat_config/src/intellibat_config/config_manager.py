@@ -1,7 +1,7 @@
 import json
 from pathlib import Path
 
-from .schema_intellibat import IntellibatConfig
+from intellibat_config.schema_intellibat import IntellibatConfig
 
 
 class ConfigManager:
