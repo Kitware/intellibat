@@ -46,7 +46,7 @@ async def update_config(request: Request):
     try:
         config_update = {
             "recording_format": form["recording_format"],
-            "sample_rate": form["sample_rate"],
+            "sample_rate": int(form["sample_rate"]),
             "triggered_recording": form.get("triggered_recording", False),
             "minimum_trigger_frequency": form["minimum_trigger_frequency"],
             "maximum_recording_length": form["maximum_recording_length"],
@@ -60,6 +60,8 @@ async def update_config(request: Request):
         }
         config_manager.update(config_update)
     except ValidationError as e:
+        import traceback
+        traceback.print_exc()
         errors = {}
         for error in e.errors():
             field = error["loc"][0]
@@ -74,4 +76,4 @@ async def update_config(request: Request):
             },
             status_code=400,
         )
-    return RedirectResponse("/", status_code=300)
+    return RedirectResponse("/", status_code=303)
