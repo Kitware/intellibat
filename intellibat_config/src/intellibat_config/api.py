@@ -1,11 +1,11 @@
 from pathlib import Path
 
-from config_manager import ConfigManager
+from intellibat_config.config_manager import ConfigManager
 from fastapi import APIRouter, Request
 from fastapi.responses import RedirectResponse
 from fastapi.templating import Jinja2Templates
 from pydantic import ValidationError
-from settings import settings
+from intellibat_config.settings import settings
 
 router = APIRouter()
 
@@ -34,6 +34,7 @@ def get_config(request: Request):
         name="config.html",
         context={
             "config": config_raw,
+            "errors": {},
         },
     )
 
@@ -46,14 +47,16 @@ async def update_config(request: Request):
         config_update = {
             "recording_format": form["recording_format"],
             "sample_rate": form["sample_rate"],
-            "triggered_recording": form["triggered_recording"],
+            "triggered_recording": form.get("triggered_recording", False),
             "minimum_trigger_frequency": form["minimum_trigger_frequency"],
             "maximum_recording_length": form["maximum_recording_length"],
             "trigger_window": form["trigger_window"],
-            "save_noise_files": form["save_noise_files"],
+            "save_noise_files": form.get("save_noise_files", False),
             "latitude": form["latitude"],
             "longitude": form["longitude"],
             "schedule_mode": form["schedule_mode"],
+            "start_time": form["start_time"],
+            "end_time": form["end_time"],
         }
         config_manager.update(config_update)
     except ValidationError as e:

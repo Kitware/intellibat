@@ -57,7 +57,7 @@ class IntellibatConfig(BaseModel):
         le=180,
     )
 
-    schedule_mode: ScheduleMode
+    schedule_mode: ScheduleMode = ScheduleMode.CUSTOM
 
     start_time: time
 

@@ -196,6 +196,36 @@
         {% endif %}
     </div>
 
+    <div>
+        <label>start_time as HH:MM (for custom schedule only)</label>
+        <input 
+            name="start_time" 
+            value="{{ config['start_time'] }}"
+        >
+        {% if errors.get("start_time") %}
+        <ul>
+            {% for error in errors["start_time"] %}
+            <li>{{ error }}</li>
+            {% endfor %}
+        </ul>
+        {% endif %}
+    </div>
+
+    <div>
+        <label>end_time as HH:MM (for custom schedule only)</label>
+        <input 
+            name="end_time" 
+            value="{{ config['end_time'] }}"
+        >
+        {% if errors.get("end_time") %}
+        <ul>
+            {% for error in errors["end_time"] %}
+            <li>{{ error }}</li>
+            {% endfor %}
+        </ul>
+        {% endif %}
+    </div>
+
     <button type="submit">Save</button>
 
 </form>
