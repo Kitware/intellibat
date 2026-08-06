@@ -133,7 +133,7 @@ class RecordingStateMachine:
         self.filename = None
         self.chunks_written = 0
 
-    def handle_chunk(self, data, triggered):
+    def handle_chunk(self, data, triggers):
         if self.state == RecordingState.IDLE:
             return
 
@@ -146,7 +146,8 @@ class RecordingStateMachine:
             self.stop_recording()
             return
 
-        if triggered:
+        continuous_mode = not self.config_manager.config.triggered_recording
+        if triggers or continuous_mode:
             self.last_triggered = time.monotonic()
         else:
             time_since_trigger = time.monotonic() - self.last_triggered
@@ -612,7 +613,8 @@ def record():
                     print(f"Recording in progress. Adding data to {recorder.filename}")
                     recorder.handle_chunk(data, triggers)
                 else:  # Recorder is idle
-                    if triggers:
+                    continuous_mode = not config_manager.config.triggered_recording
+                    if triggers or continuous_mode:
                         filename = os.path.join(OUTPUT_DIR, f'chunk_{int(time.time())}.wav')
                         print(f"High frequency detected. Recording to file {filename}")
                         wav_file = wave.open(filename, 'wb')
