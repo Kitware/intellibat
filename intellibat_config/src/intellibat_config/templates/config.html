@@ -47,10 +47,6 @@
                 {% if config["recording_format"] == "full_spectrum" %}selected{% endif %}>
                 full_spectrum
             </option>
-            <option value="zero_crossing"
-                {% if config["recording_format"] == "zero_crossing" %}selected{% endif %}>
-                zero_crossing
-            </option>
         </select>
         {% if errors.get("recording_format") %}
         <ul>
@@ -216,6 +212,10 @@
                 {% if config["schedule_mode"] == "sunset_minus_30_to_sunrise_plus_30" %}selected{% endif %}>
                 sunset_minus_30_to_sunrise_plus_30
             </option>
+            <option value="custom"
+                {% if config["schedule_mode"] == "custom" %}selected{% endif %}>
+                custom
+            </option>
         </select>
         {% if errors.get("schedule_mode") %}
         <ul>
@@ -227,9 +227,9 @@
     </div>
 
     <div>
-        <label>start_time as HH:MM (for custom schedule only)</label>
-        <input 
-            name="start_time" 
+        <label>start_time as HH:MM:ss (for custom schedule only)</label>
+        <input
+            name="start_time"
             value="{{ config['start_time'] }}"
         >
         {% if errors.get("start_time") %}
@@ -242,9 +242,9 @@
     </div>
 
     <div>
-        <label>end_time as HH:MM (for custom schedule only)</label>
-        <input 
-            name="end_time" 
+        <label>end_time as HH:MM:ss (for custom schedule only)</label>
+        <input
+            name="end_time"
             value="{{ config['end_time'] }}"
         >
         {% if errors.get("end_time") %}
