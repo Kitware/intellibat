@@ -13,3 +13,5 @@ textual
 torch
 tqdm
 -e ../intellibat_config
+astral
+timezonefinder

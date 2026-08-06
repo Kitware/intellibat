@@ -30,16 +30,20 @@ import sys
 import threading
 import time
 import wave
-from datetime import datetime
+from datetime import date, datetime, timedelta
 from enum import Enum
 from pathlib import Path
 from queue import Queue
 from threading import Thread
+from zoneinfo import ZoneInfo
 
 import numpy as np
 import serial
+from astral import LocationInfo
+from astral.sun import sun
+from timezonefinder import TimezoneFinder
 
-from intellibat_config import ConfigManager
+from intellibat_config import ConfigManager, ScheduleMode
 
 # Hardware/serial related constants (future configurable)
 PORT = '/dev/ttyACM0'
@@ -149,6 +153,34 @@ class RecordingStateMachine:
             if time_since_trigger > self.config_manager.config.trigger_window:
                 print("Trigger window elapsed...")
                 self.stop_recording()
+
+
+class RecordingSchedule:
+    def __init__(self, start_time, end_time):
+        self._start_time = start_time
+        self._end_time = end_time
+        self._time_zone = None
+
+    @property
+    def start_time(self):
+        return self._start_time
+
+    @property
+    def end_time(self):
+        return self._end_time
+
+    @property
+    def time_zone(self):
+        return self._time_zone
+
+    def set_start_time(self, start_time):
+        self._start_time = start_time
+
+    def set_end_time(self, end_time):
+        self._end_time = end_time
+
+
+recording_schedule = RecordingSchedule(datetime.now().time(), datetime.now().time())
 
 
 class LED(Thread):
@@ -458,6 +490,29 @@ def read_sample_chunk() -> bytes:
         return data
 
 
+def update_recording_schedule():
+    config = config_manager.config
+    if config.schedule_mode == ScheduleMode.CUSTOM:
+        recording_schedule.set_start_time(config.start_time)
+        recording_schedule.set_end_time(config.end_time)
+    else:
+        tz_finder = TimezoneFinder()
+        tz_name = tz_finder.timezone_at(lat=config.latitude, lng=config.longitude)
+        if not tz_name:
+            print("Could not determine time zone. Please update the config and restart.")
+            sys.exit(1)
+        location = LocationInfo(latitude=config.latitude, longitude=config.longitude, timezone=tz_name)
+        sun_info = sun(location.observer, date=date.today(), tzinfo=ZoneInfo(location.timezone))
+        sunset = sun_info["sunset"]
+        sunrise = sun_info["sunrise"]
+        if config.schedule_mode == ScheduleMode.SUNSET_TO_SUNRISE:
+            recording_schedule.set_start_time(sunset.time())
+            recording_schedule.set_end_time(sunrise.time())
+        elif config.schedule_mode == ScheduleMode.SUNSET_MINUS_30_TO_SUNRISE_PLUS_30:
+            recording_schedule.set_start_time((sunset - timedelta(minutes=30)).time())
+            recording_schedule.set_end_time((sunrise + timedelta(minutes=30)).time())
+
+
 def setup():
     print('Setting up...')
     # Try and find the settings file
@@ -491,6 +546,7 @@ def setup():
     with open(CONFIG_PATH) as f:
         config = json.load(f)
         config_manager.update(config)
+        update_recording_schedule()
 
         update_chunk_dimensions()
         if config_manager.config.sample_rate != CONFIGURED_SAMPLE_RATE:
@@ -509,8 +565,8 @@ def maybe_reload_config():
 
 def should_record():
     now = datetime.now().time()
-    start_time = config_manager.config.start_time
-    end_time = config_manager.config.end_time
+    start_time = recording_schedule.start_time
+    end_time = recording_schedule.end_time
 
     if start_time < end_time:
         return start_time <= now < end_time
