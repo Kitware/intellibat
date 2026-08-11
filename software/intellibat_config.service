@@ -8,7 +8,7 @@ User=intellibat
 Group=intellibat
 
 WorkingDirectory=/opt/intellibat
-ExecStart=/opt/intellibat/venv/bin/python /opt/intellibat/main.py
+ExecStart=/opt/intellibat/venv/bin/uvicorn intellibat_config.main:app --host 0.0.0.0 --port 8000
 
 Restart=on-failure
 RestartSec=2

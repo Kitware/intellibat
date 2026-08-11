@@ -52,7 +52,7 @@ BAUD = 115200
 INCOMING = Queue()
 
 # Configuration
-CONFIG_PATH = Path('config.json')
+CONFIG_PATH = Path(os.getenv("INTELLIBAT_CONFIG_PATH", "config.json"))
 config_manager = ConfigManager.from_file(CONFIG_PATH)
 
 CHUNK_SECONDS = 1
