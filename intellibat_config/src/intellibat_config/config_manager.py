@@ -34,6 +34,12 @@ class ConfigManager:
         self._write()
         return self._config
 
+    def reload(self):
+        with open(self._path, 'r') as f:
+            config_data = json.load(f)
+            config = IntellibatConfig.model_validate(config_data)
+            self._config = config
+
     def _write(self):
         tmp = self._path.with_suffix(".tmp")
         tmp.write_text(self._config.model_dump_json(indent=2))

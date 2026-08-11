@@ -1,10 +1,11 @@
 from pathlib import Path
 
-from intellibat_config.config_manager import ConfigManager
 from fastapi import APIRouter, Request
 from fastapi.responses import RedirectResponse
 from fastapi.templating import Jinja2Templates
 from pydantic import ValidationError
+
+from intellibat_config.config_manager import ConfigManager
 from intellibat_config.settings import settings
 
 router = APIRouter()
@@ -22,6 +23,7 @@ def get_health():
 
 @router.get("/")
 def get_config(request: Request):
+    config_manager.reload()
     config = config_manager.config
 
     config_raw = {
@@ -42,6 +44,7 @@ def get_config(request: Request):
 @router.post("/")
 async def update_config(request: Request):
     form = await request.form()
+    config_manager.reload()
 
     try:
         config_update = {
