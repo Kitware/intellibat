@@ -3,6 +3,7 @@
 #
 # Create an intellibat user
 id -u intellibat &> /dev/null || sudo useradd --system --no-create-home intellibat
+sudo usermod -aG plugdev,dialout,gpio intellibat
 
 APP_DIR=/opt/intellibat/
 
@@ -11,7 +12,10 @@ sudo mkdir -p $APP_DIR
 sudo chown -R intellibat:intellibat $APP_DIR
 
 sudo cp ./service.py $APP_DIR/main.py
-sudo cp ./requirements.txt $APP_DIR/requirements.txt
+sudo cp ./requirements-install.txt $APP_DIR/requirements.txt
+
+sudo cp -r ../intellibat_config/ $APP_DIR/
+sudo rm  -rf $APP_DIR/intellibat_config/src/*.egg-info
 
 # Set up python environment with dependencies
 pushd $APP_DIR/

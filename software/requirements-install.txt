@@ -1,0 +1,17 @@
+batbot
+click
+gpiozero
+lgpio
+numpy
+onnx
+onnxruntime
+pigpio
+pyserial
+RPi.GPIO
+spidev
+textual
+torch
+tqdm
+-e ./intellibat_config
+astral
+timezonefinder
