@@ -640,13 +640,13 @@ def chunk_triggers(data):
     peak_idx = np.argmax(magnitude)
     peak_freq = freqs[peak_idx]
 
-    peak_cutoff = 10
+    peak_cutoff = 3
     peak_idxs = np.argsort(magnitude)[-peak_cutoff:]
     peak_freqs = freqs[peak_idxs]
-    print(peak_freqs.max())
 
     trigger_freq = config_manager.config.minimum_trigger_frequency * 1000
     flag = np.any(peak_freqs > trigger_freq)
+    print(peak_freqs.max(), flag)
 
     return flag
 
