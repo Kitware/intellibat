@@ -616,8 +616,12 @@ def record():
                 if not DEVICE_STREAMING:
                     start_device_streaming()
 
-                data = read_sample_chunk()
-                if len(data) != BYTES_PER_CHUNK:
+                try:
+                    data = read_sample_chunk()
+                except RuntimeError:
+                    data = None
+
+                if data is None or len(data) != BYTES_PER_CHUNK:
                     print('Incomplete read:', len(data))
                     continue
 
@@ -640,8 +644,8 @@ def record():
                             recorder.begin_recording(wav_file, filename)
                             recorder.handle_chunk(data, True)
 
-                    INCOMING.put(filename)
-                    print('Saved:', filename)
+                        INCOMING.put(filename)
+                        print('Saved:', filename)
             else:
                 if DEVICE_STREAMING:
                     stop_device_streaming()

@@ -8,7 +8,7 @@ User=intellibat
 Group=intellibat
 
 WorkingDirectory=/opt/intellibat
-ExecStart=/opt/intellibat/venv/bin/python /opt/intellibat/main.py
+ExecStart=/opt/intellibat/venv/bin/python /opt/intellibat/software/service.py
 
 Restart=on-failure
 RestartSec=2

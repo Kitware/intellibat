@@ -4,6 +4,7 @@
 # Create an intellibat user
 id -u intellibat &> /dev/null || sudo useradd --system --no-create-home intellibat
 sudo usermod -aG plugdev,dialout,gpio intellibat
+sudo usermod -aG intellibat $(whoami)
 
 APP_DIR=/opt/intellibat/
 
@@ -11,30 +12,30 @@ APP_DIR=/opt/intellibat/
 sudo mkdir -p $APP_DIR
 sudo chown -R intellibat:intellibat $APP_DIR
 
-sudo cp ./service.py $APP_DIR/main.py
-sudo cp ./requirements-install.txt $APP_DIR/requirements.txt
+# COPY REPO TO /opt/intellibat
 
-sudo cp -r ../intellibat_config/ $APP_DIR/
+# sudo cp ./service.py $APP_DIR/main.py
+# sudo cp ./requirements-install.txt $APP_DIR/requirements.txt
+
+# sudo cp -r intellibat_config/ $APP_DIR/
 sudo rm  -rf $APP_DIR/intellibat_config/src/*.egg-info
 
 # Set up python environment with dependencies
 pushd $APP_DIR/
 sudo -u intellibat python -m venv ./venv
 sudo -u intellibat ./venv/bin/python -m pip install --no-cache-dir --upgrade pip
-sudo -u intellibat ./venv/bin/python -m pip install --no-cache-dir -r requirements.txt
+sudo -u intellibat ./venv/bin/python -m pip install --no-cache-dir -r software/requirements-install.txt
 popd
 
 # Set up the configuration file
 CONFIG_DIR=/etc/intellibat/
-
-sudo usermod -aG intellibat $(whoami)
 
 sudo mkdir -p $CONFIG_DIR
 sudo chown -R root:intellibat $CONFIG_DIR
 sudo chmod 775 $CONFIG_DIR
 
 if [ ! -f "$CONFIG_DIR/config.json" ]; then
-    sudo cp ./default_config.json $CONFIG_DIR/config.json
+    sudo cp software/default_config.json $CONFIG_DIR/config.json
 fi
 sudo chown root:intellibat $CONFIG_DIR/config.json
 sudo chmod 664 $CONFIG_DIR/config.json
@@ -53,8 +54,8 @@ sudo nmcli connection modify intellibat-ap wifi-sec.key-mgmt wpa-psk
 sudo nmcli connection modify intellibat-ap wifi-sec.psk "${INTELLIBAT_AP_PASSWORD:-intellibat123}"
 
 # Set up the recording and config services
-sudo cp ./intellibat.service /etc/systemd/system/intellibat.service
-sudo cp ./intellibat_config.service /etc/systemd/system/intellibat_config.service
+sudo cp software/intellibat.service /etc/systemd/system/intellibat.service
+sudo cp software/intellibat_config.service /etc/systemd/system/intellibat_config.service
 sudo systemctl daemon-reload
 
 sudo systemctl enable intellibat
