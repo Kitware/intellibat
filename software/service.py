@@ -37,6 +37,7 @@ from queue import Queue
 from threading import Thread
 from zoneinfo import ZoneInfo
 
+import batbot
 import numpy as np
 import serial
 from astral import LocationInfo
@@ -284,6 +285,11 @@ class Spectrogram(Thread):
         Thread.__init__(self)
         self.name = 'spectrogram'
         self.daemon = True
+        self.runner = batbot.classifier.Classifier(
+            batch_size=1,
+            num_workers=1,
+        )
+        print(self.runner.session)
 
     def next(self):
         return INCOMING.get(block=True)
@@ -304,6 +310,13 @@ class Spectrogram(Thread):
                 debug=False,
             )
             print(f'Created: {compressed_paths}')
+
+            results = self.runner.classify(compressed_paths)
+
+            for compressed_path, result in zip(compressed_paths, results):
+                results_path = compressed_path.replace('.jpg', '.results.json')
+                with open(results_path, 'w') as results_file:
+                    json.dump(result, results_file, indent=4)
 
 
 def update_chunk_dimensions():
@@ -649,8 +662,9 @@ def record():
                 time.sleep(5)
         except Exception as ex:
             import traceback
-            print(f"Error Type: {type(ex).__name__}")
-            print(f"Error Message: {ex}")
+
+            print(f'Error Type: {type(ex).__name__}')
+            print(f'Error Message: {ex}')
             traceback.print_exc()
         except KeyboardInterrupt:
             break

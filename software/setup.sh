@@ -6,7 +6,7 @@ id -u intellibat &> /dev/null || sudo useradd --system --no-create-home intellib
 sudo usermod -aG plugdev,dialout,gpio intellibat
 sudo usermod -aG intellibat $(whoami)
 
-APP_DIR=/opt/intellibat/
+export APP_DIR=/opt/intellibat/
 
 # Set up /opt/intellibat. Set owner to current user
 sudo mkdir -p $APP_DIR
@@ -28,7 +28,7 @@ sudo -u intellibat ./venv/bin/python -m pip install --no-cache-dir -r software/r
 popd
 
 # Set up the configuration file
-CONFIG_DIR=/etc/intellibat/
+export CONFIG_DIR=/etc/intellibat/
 
 sudo mkdir -p $CONFIG_DIR
 sudo chown -R root:intellibat $CONFIG_DIR

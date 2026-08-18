@@ -19,6 +19,7 @@ StandardError=journal
 Environment=PYTHONUNBUFFERED=1
 Environment=PIP_NO_CACHE_DIR=1
 Environment=INTELLIBAT_CONFIG_PATH=/etc/intellibat/config.json
+Environment=BATBOT_REDUCED=1
 
 [Install]
 WantedBy=multi-user.target

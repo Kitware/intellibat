@@ -9,7 +9,7 @@ onnx
 onnxruntime
 pigpio
 pyserial
-RPi.GPIO
+rpi-lgpio
 spidev
 textual
 timezonefinder
