@@ -52,7 +52,7 @@ async def update_config(request: Request):
             'recording_format': form['recording_format'],
             'sample_rate': int(form['sample_rate']),
             'triggered_recording': form.get('triggered_recording', False),
-            'machine_learning_enabled': form.get('machine_learning_enabled', True),
+            'machine_learning_enabled': form.get('machine_learning_enabled', False),
             'minimum_trigger_frequency': form['minimum_trigger_frequency'],
             'maximum_recording_length': form['maximum_recording_length'],
             'trigger_window': form['trigger_window'],
