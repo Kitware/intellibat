@@ -637,15 +637,12 @@ def record():
                             OUTPUT_DIR, f'chunk_{int(time.time())}.wav'
                         )
                         print(f'High frequency detected. Recording to file {filename}')
-                        with wave.open(filename, 'wb') as wav_file:
-                            wav_file.setnchannels(1)
-                            wav_file.setsampwidth(2)
-                            wav_file.setframerate(config_manager.config.sample_rate)
-                            recorder.begin_recording(wav_file, filename)
-                            recorder.handle_chunk(data, True)
-
-                        INCOMING.put(filename)
-                        print('Saved:', filename)
+                        wav_file = wave.open(filename, 'wb')
+                        wav_file.setnchannels(1)
+                        wav_file.setsampwidth(2)
+                        wav_file.setframerate(config_manager.config.sample_rate)
+                        recorder.begin_recording(wav_file, filename)
+                        recorder.handle_chunk(data, True)
             else:
                 if DEVICE_STREAMING:
                     stop_device_streaming()
