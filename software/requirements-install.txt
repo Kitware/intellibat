@@ -12,6 +12,6 @@ spidev
 textual
 torch
 tqdm
--e ../intellibat_config
+-e ./intellibat_config
 astral
 timezonefinder

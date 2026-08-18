@@ -30,13 +30,20 @@ import sys
 import threading
 import time
 import wave
-from datetime import datetime
+from datetime import date, datetime, timedelta
+from enum import Enum
 from pathlib import Path
 from queue import Queue
 from threading import Thread
+from zoneinfo import ZoneInfo
 
 import numpy as np
 import serial
+from astral import LocationInfo
+from astral.sun import sun
+from timezonefinder import TimezoneFinder
+
+from intellibat_config import ConfigManager, ScheduleMode
 
 # Hardware/serial related constants (future configurable)
 PORT = '/dev/ttyACM0'
@@ -44,20 +51,13 @@ BAUD = 115200
 
 INCOMING = Queue()
 
-# Configurable settings
-SAMPLE_RATE = 384000
-THRESHOLD_FREQ = 1200
-SAMPLE_RATE_KEY = 'sample_rate'
-THRESHOLD_FREQ_KEY = 'threshold_freq'
-RECORDING_START_TIME = datetime.strptime('17:00', '%H:%M').time()
-RECORDING_END_TIME = datetime.strptime('05:30', '%H:%M').time()
-START_TIME_KEY = 'start_time'
-END_TIME_KEY = 'end_time'
-CONFIG_KEYS = [SAMPLE_RATE_KEY, THRESHOLD_FREQ_KEY, START_TIME_KEY, END_TIME_KEY]
+# Configuration
+CONFIG_PATH = Path(os.getenv("INTELLIBAT_CONFIG_PATH", "config.json"))
+config_manager = ConfigManager.from_file(CONFIG_PATH)
 
-CHUNK_SECONDS = 5
+CHUNK_SECONDS = 1
 BYTES_PER_SAMPLE = 2
-SAMPLES_PER_CHUNK = SAMPLE_RATE * CHUNK_SECONDS
+SAMPLES_PER_CHUNK = config_manager.config.sample_rate * CHUNK_SECONDS
 BYTES_PER_CHUNK = SAMPLES_PER_CHUNK * BYTES_PER_SAMPLE
 
 FRAME_MAGIC = b'IBAT'
@@ -82,13 +82,106 @@ STREAM_READER_ERROR = None
 SAMPLE_BUFFER_CONDITION = threading.Condition()
 
 OUTPUT_DIR = 'test_recordings'
-CONFIG_PATH = Path('config.json')
 os.makedirs(OUTPUT_DIR, exist_ok=True)
 
 ser = serial.Serial(
     PORT, BAUD, timeout=SERIAL_TIMEOUT_SECONDS, write_timeout=SERIAL_TIMEOUT_SECONDS
 )
 time.sleep(1)
+
+
+class RecordingState(Enum):
+    IDLE = 1
+    RECORDING = 2
+
+
+class RecordingStateMachine:
+    def __init__(self, config_manager, spectrogram_queue):
+        self.state = RecordingState.IDLE
+        self.config_manager = config_manager
+        self.spectrogram_queue = spectrogram_queue
+        self.current_recording = None
+        self.filename = None
+        self.chunks_written = 0
+
+    @property
+    def idle(self):
+        return self.state == RecordingState.IDLE
+
+    @property
+    def recording(self):
+        return self.state == RecordingState.RECORDING
+
+    def begin_recording(self, current_recording, filename):
+        if self.state == RecordingState.RECORDING:
+            return
+        self.state = RecordingState.RECORDING
+        self.current_recording = current_recording
+        self.filename = filename
+        self.chunks_written = 0
+        self.last_triggered = time.monotonic()  # assume recording starts with a bat call
+
+    def stop_recording(self):
+        print(f"Stopping recording for {self.filename}. Recorded {self.chunks_written} seconds")
+        if self.current_recording:
+            self.current_recording.close()
+            if self.filename:
+                self.spectrogram_queue.put(self.filename)
+
+        self.state = RecordingState.IDLE
+        self.current_recording = None
+        self.filename = None
+        self.chunks_written = 0
+
+    def handle_chunk(self, data, triggers):
+        if self.state == RecordingState.IDLE:
+            return
+
+        if self.current_recording:
+            self.current_recording.writeframes(data)
+            self.chunks_written += 1
+
+        if self.chunks_written >= self.config_manager.config.maximum_recording_length:
+            print("Maximum file size reached...")
+            self.stop_recording()
+            return
+
+        continuous_mode = not self.config_manager.config.triggered_recording
+        if triggers or continuous_mode:
+            self.last_triggered = time.monotonic()
+        else:
+            time_since_trigger = time.monotonic() - self.last_triggered
+            if time_since_trigger > self.config_manager.config.trigger_window:
+                print("Trigger window elapsed...")
+                self.stop_recording()
+
+
+class RecordingSchedule:
+    def __init__(self, start_time, end_time):
+        self._start_time = start_time
+        self._end_time = end_time
+        self._time_zone = None
+
+    @property
+    def start_time(self):
+        return self._start_time
+
+    @property
+    def end_time(self):
+        return self._end_time
+
+    @property
+    def time_zone(self):
+        return self._time_zone
+
+    def set_start_time(self, start_time):
+        self._start_time = start_time
+
+    def set_end_time(self, end_time):
+        self._end_time = end_time
+
+
+recording_schedule = RecordingSchedule(datetime.now().time(), datetime.now().time())
 
 
 class LED(Thread):
@@ -212,7 +305,7 @@ class Spectrogram(Thread):
 def update_chunk_dimensions():
     global SAMPLES_PER_CHUNK
     global BYTES_PER_CHUNK
-    SAMPLES_PER_CHUNK = SAMPLE_RATE * CHUNK_SECONDS
+    SAMPLES_PER_CHUNK = config_manager.config.sample_rate * CHUNK_SECONDS
     BYTES_PER_CHUNK = SAMPLES_PER_CHUNK * BYTES_PER_SAMPLE
 
 
@@ -274,9 +367,9 @@ def configure_device_sample_rate():
     was_streaming = DEVICE_STREAMING
 
     stop_device_streaming()
-    write_device_command(f'SET_SR:{SAMPLE_RATE}')
+    write_device_command(f'SET_SR:{config_manager.config.sample_rate}')
     ser.reset_input_buffer()
-    CONFIGURED_SAMPLE_RATE = SAMPLE_RATE
+    CONFIGURED_SAMPLE_RATE = config_manager.config.sample_rate
 
     if was_streaming:
         start_device_streaming()
@@ -347,7 +440,7 @@ def append_next_frame_samples():
 
 
 def append_sample_payload(payload: bytes):
-    max_pending_bytes = SAMPLE_RATE * BYTES_PER_SAMPLE * MAX_PENDING_SECONDS
+    max_pending_bytes = config_manager.config.sample_rate * BYTES_PER_SAMPLE * MAX_PENDING_SECONDS
 
     with SAMPLE_BUFFER_CONDITION:
         PENDING_SAMPLE_BYTES.extend(payload)
@@ -398,12 +491,27 @@ def read_sample_chunk() -> bytes:
         return data
 
 
-def validate_config(config: dict) -> bool:
-    required_keys = CONFIG_KEYS
-    missing = [k for k in required_keys if k not in config]
-    for m in missing:
-        print(f'Config missing key {m}.')
-    return not missing
+def update_recording_schedule():
+    config = config_manager.config
+    if config.schedule_mode == ScheduleMode.CUSTOM:
+        recording_schedule.set_start_time(config.start_time)
+        recording_schedule.set_end_time(config.end_time)
+    else:
+        tz_finder = TimezoneFinder()
+        tz_name = tz_finder.timezone_at(lat=config.latitude, lng=config.longitude)
+        if not tz_name:
+            print("Could not determine time zone. Please update the config and restart.")
+            sys.exit(1)
+        location = LocationInfo(latitude=config.latitude, longitude=config.longitude, timezone=tz_name)
+        sun_info = sun(location.observer, date=date.today(), tzinfo=ZoneInfo(location.timezone))
+        sunset = sun_info["sunset"]
+        sunrise = sun_info["sunrise"]
+        if config.schedule_mode == ScheduleMode.SUNSET_TO_SUNRISE:
+            recording_schedule.set_start_time(sunset.time())
+            recording_schedule.set_end_time(sunrise.time())
+        elif config.schedule_mode == ScheduleMode.SUNSET_MINUS_30_TO_SUNRISE_PLUS_30:
+            recording_schedule.set_start_time((sunset - timedelta(minutes=30)).time())
+            recording_schedule.set_end_time((sunrise + timedelta(minutes=30)).time())
 
 
 def setup():
@@ -415,10 +523,18 @@ def setup():
         with open(CONFIG_PATH, 'w') as f:
             json.dump(
                 {
-                    SAMPLE_RATE_KEY: 384000,
-                    THRESHOLD_FREQ_KEY: 1200,
-                    START_TIME_KEY: '17:00',
-                    END_TIME_KEY: '05:30',
+                    "recording_format": "full_spectrum",
+                    "sample_rate": 256000,
+                    "triggered_recording": True,
+                    "minimum_trigger_frequency": 20,
+                    "maximum_recording_length": 15,
+                    "trigger_window": 5,
+                    "save_noise_files": False,
+                    "latitude": 0,
+                    "longitude": 0,
+                    "schedule_mode": "custom",
+                    "start_time": "17:00",
+                    "end_time": "05:00"
                 },
                 f,
                 indent=2,
@@ -430,20 +546,11 @@ def setup():
     # Config path exists
     with open(CONFIG_PATH) as f:
         config = json.load(f)
-        config_valid = validate_config(config)
-        if not config_valid:
-            print('Invalid config. Please fix the errors and restart the service.')
-            sys.exit(1)
-        global SAMPLE_RATE
-        global THRESHOLD_FREQ
-        global RECORDING_START_TIME
-        global RECORDING_END_TIME
-        SAMPLE_RATE = config[SAMPLE_RATE_KEY]
-        THRESHOLD_FREQ = config[THRESHOLD_FREQ_KEY]
-        RECORDING_START_TIME = datetime.strptime(config[START_TIME_KEY], '%H:%M').time()
-        RECORDING_END_TIME = datetime.strptime(config[END_TIME_KEY], '%H:%M').time()
+        config_manager.update(config)
+        update_recording_schedule()
+
         update_chunk_dimensions()
-        if CONFIGURED_SAMPLE_RATE != SAMPLE_RATE:
+        if config_manager.config.sample_rate != CONFIGURED_SAMPLE_RATE:
             configure_device_sample_rate()
 
         global LAST_RELOAD_TIME
@@ -459,16 +566,34 @@ def maybe_reload_config():
 
 def should_record():
     now = datetime.now().time()
+    start_time = recording_schedule.start_time
+    end_time = recording_schedule.end_time
 
-    if RECORDING_START_TIME < RECORDING_END_TIME:
-        return RECORDING_START_TIME <= now < RECORDING_END_TIME
+    if start_time < end_time:
+        return start_time <= now < end_time
 
     # Handle a range that crosses midnight
-    return now >= RECORDING_START_TIME or now < RECORDING_END_TIME
+    return now >= start_time or now < end_time
+
+
+def chunk_triggers(data):
+    samples = np.frombuffer(data, dtype='<i2')
+
+    fft = np.fft.rfft(samples)
+    freqs = np.fft.rfftfreq(len(samples), d=1 / config_manager.config.sample_rate)
+
+    magnitude = np.abs(fft)
+    magnitude[0] = 0
+
+    peak_idx = np.argmax(magnitude)
+    peak_freq = freqs[peak_idx]
+
+    return peak_freq > config_manager.config.minimum_trigger_frequency * 1000
 
 
 def record():
     print('Reading...')
+    recorder = RecordingStateMachine(config_manager=config_manager, spectrogram_queue=INCOMING)
     while True:
         try:
             maybe_reload_config()
@@ -481,32 +606,23 @@ def record():
                 if len(data) != BYTES_PER_CHUNK:
                     print('Incomplete read:', len(data))
                     continue
-                samples = np.frombuffer(data, dtype='<i2')
 
-                fft = np.fft.rfft(samples)
-                freqs = np.fft.rfftfreq(len(samples), d=1 / SAMPLE_RATE)
+                triggers = chunk_triggers(data)
 
-                magnitude = np.abs(fft)
-                magnitude[0] = 0
-
-                peak_idx = np.argmax(magnitude)
-                peak_freq = freqs[peak_idx]
-
-                if peak_freq > THRESHOLD_FREQ:
-                    print(f'Peak: {int(peak_freq)} Hz -> KEEP')
-
-                    filename = os.path.join(OUTPUT_DIR, f'chunk_{int(time.time())}.wav')
-                    with wave.open(filename, 'wb') as wf:
-                        wf.setnchannels(1)
-                        wf.setsampwidth(2)
-                        wf.setframerate(SAMPLE_RATE)
-                        wf.writeframes(data)
-
-                    INCOMING.put(filename)
-
-                    print('Saved:', filename)
-                else:
-                    print(f'Peak: {int(peak_freq)} Hz -> DISCARD')
+                if recorder.recording:
+                    print(f"Recording in progress. Adding data to {recorder.filename}")
+                    recorder.handle_chunk(data, triggers)
+                else:  # Recorder is idle
+                    continuous_mode = not config_manager.config.triggered_recording
+                    if triggers or continuous_mode:
+                        filename = os.path.join(OUTPUT_DIR, f'chunk_{int(time.time())}.wav')
+                        print(f"High frequency detected. Recording to file {filename}")
+                        wav_file = wave.open(filename, 'wb')
+                        wav_file.setnchannels(1)
+                        wav_file.setsampwidth(2)
+                        wav_file.setframerate(config_manager.config.sample_rate)
+                        recorder.begin_recording(wav_file, filename)
+                        recorder.handle_chunk(data, True)
             else:
                 if DEVICE_STREAMING:
                     stop_device_streaming()
