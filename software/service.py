@@ -55,7 +55,7 @@ INCOMING = Queue()
 CONFIG_PATH = Path(os.getenv('INTELLIBAT_CONFIG_PATH', 'config.json'))
 config_manager = ConfigManager.from_file(CONFIG_PATH)
 
-CHUNK_SECONDS = 5
+CHUNK_SECONDS = 1
 BYTES_PER_SAMPLE = 2
 SAMPLES_PER_CHUNK = config_manager.config.sample_rate * CHUNK_SECONDS
 BYTES_PER_CHUNK = SAMPLES_PER_CHUNK * BYTES_PER_SAMPLE
@@ -539,8 +539,8 @@ def setup():
                     'sample_rate': 256000,
                     'triggered_recording': True,
                     'minimum_trigger_frequency': 20,
-                    'maximum_recording_length': 15,
-                    'trigger_window': 5,
+                    'maximum_recording_length': 5,
+                    'trigger_window': 1,
                     'save_noise_files': False,
                     'latitude': 0,
                     'longitude': 0,
