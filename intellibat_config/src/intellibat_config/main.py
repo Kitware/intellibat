@@ -3,11 +3,12 @@ from fastapi.responses import RedirectResponse
 
 from intellibat_config import api
 
-app = FastAPI(title="Intellibat Config")
+app = FastAPI(title='Intellibat Config')
 
-@app.get("/")
+
+@app.get('/')
 def root():
-    return RedirectResponse("/config/")
+    return RedirectResponse('/config/')
 
 
-app.include_router(api.router, prefix="/config")
+app.include_router(api.router, prefix='/config')

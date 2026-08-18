@@ -52,10 +52,10 @@ BAUD = 115200
 INCOMING = Queue()
 
 # Configuration
-CONFIG_PATH = Path(os.getenv("INTELLIBAT_CONFIG_PATH", "config.json"))
+CONFIG_PATH = Path(os.getenv('INTELLIBAT_CONFIG_PATH', 'config.json'))
 config_manager = ConfigManager.from_file(CONFIG_PATH)
 
-CHUNK_SECONDS = 1
+CHUNK_SECONDS = 5
 BYTES_PER_SAMPLE = 2
 SAMPLES_PER_CHUNK = config_manager.config.sample_rate * CHUNK_SECONDS
 BYTES_PER_CHUNK = SAMPLES_PER_CHUNK * BYTES_PER_SAMPLE
@@ -119,10 +119,14 @@ class RecordingStateMachine:
         self.current_recording = current_recording
         self.filename = filename
         self.chunks_written = 0
-        self.last_triggered = time.monotonic()  # assume recording starts with a bat call
+        self.last_triggered = (
+            time.monotonic()
+        )  # assume recording starts with a bat call
 
     def stop_recording(self):
-        print(f"Stopping recording for {self.filename}. Recorded {self.chunks_written} seconds")
+        print(
+            f'Stopping recording for {self.filename}. Recorded {self.chunks_written} seconds'
+        )
         if self.current_recording:
             self.current_recording.close()
             if self.filename:
@@ -142,7 +146,7 @@ class RecordingStateMachine:
             self.chunks_written += 1
 
         if self.chunks_written >= self.config_manager.config.maximum_recording_length:
-            print("Maximum file size reached...")
+            print('Maximum file size reached...')
             self.stop_recording()
             return
 
@@ -152,7 +156,7 @@ class RecordingStateMachine:
         else:
             time_since_trigger = time.monotonic() - self.last_triggered
             if time_since_trigger > self.config_manager.config.trigger_window:
-                print("Trigger window elapsed...")
+                print('Trigger window elapsed...')
                 self.stop_recording()
 
 
@@ -440,7 +444,9 @@ def append_next_frame_samples():
 
 
 def append_sample_payload(payload: bytes):
-    max_pending_bytes = config_manager.config.sample_rate * BYTES_PER_SAMPLE * MAX_PENDING_SECONDS
+    max_pending_bytes = (
+        config_manager.config.sample_rate * BYTES_PER_SAMPLE * MAX_PENDING_SECONDS
+    )
 
     with SAMPLE_BUFFER_CONDITION:
         PENDING_SAMPLE_BYTES.extend(payload)
@@ -500,12 +506,18 @@ def update_recording_schedule():
         tz_finder = TimezoneFinder()
         tz_name = tz_finder.timezone_at(lat=config.latitude, lng=config.longitude)
         if not tz_name:
-            print("Could not determine time zone. Please update the config and restart.")
+            print(
+                'Could not determine time zone. Please update the config and restart.'
+            )
             sys.exit(1)
-        location = LocationInfo(latitude=config.latitude, longitude=config.longitude, timezone=tz_name)
-        sun_info = sun(location.observer, date=date.today(), tzinfo=ZoneInfo(location.timezone))
-        sunset = sun_info["sunset"]
-        sunrise = sun_info["sunrise"]
+        location = LocationInfo(
+            latitude=config.latitude, longitude=config.longitude, timezone=tz_name
+        )
+        sun_info = sun(
+            location.observer, date=date.today(), tzinfo=ZoneInfo(location.timezone)
+        )
+        sunset = sun_info['sunset']
+        sunrise = sun_info['sunrise']
         if config.schedule_mode == ScheduleMode.SUNSET_TO_SUNRISE:
             recording_schedule.set_start_time(sunset.time())
             recording_schedule.set_end_time(sunrise.time())
@@ -523,18 +535,18 @@ def setup():
         with open(CONFIG_PATH, 'w') as f:
             json.dump(
                 {
-                    "recording_format": "full_spectrum",
-                    "sample_rate": 256000,
-                    "triggered_recording": True,
-                    "minimum_trigger_frequency": 20,
-                    "maximum_recording_length": 15,
-                    "trigger_window": 5,
-                    "save_noise_files": False,
-                    "latitude": 0,
-                    "longitude": 0,
-                    "schedule_mode": "custom",
-                    "start_time": "17:00",
-                    "end_time": "05:00"
+                    'recording_format': 'full_spectrum',
+                    'sample_rate': 256000,
+                    'triggered_recording': True,
+                    'minimum_trigger_frequency': 20,
+                    'maximum_recording_length': 15,
+                    'trigger_window': 5,
+                    'save_noise_files': False,
+                    'latitude': 0,
+                    'longitude': 0,
+                    'schedule_mode': 'custom',
+                    'start_time': '17:00',
+                    'end_time': '05:00',
                 },
                 f,
                 indent=2,
@@ -593,7 +605,9 @@ def chunk_triggers(data):
 
 def record():
     print('Reading...')
-    recorder = RecordingStateMachine(config_manager=config_manager, spectrogram_queue=INCOMING)
+    recorder = RecordingStateMachine(
+        config_manager=config_manager, spectrogram_queue=INCOMING
+    )
     while True:
         try:
             maybe_reload_config()
@@ -610,19 +624,24 @@ def record():
                 triggers = chunk_triggers(data)
 
                 if recorder.recording:
-                    print(f"Recording in progress. Adding data to {recorder.filename}")
+                    print(f'Recording in progress. Adding data to {recorder.filename}')
                     recorder.handle_chunk(data, triggers)
                 else:  # Recorder is idle
                     continuous_mode = not config_manager.config.triggered_recording
                     if triggers or continuous_mode:
-                        filename = os.path.join(OUTPUT_DIR, f'chunk_{int(time.time())}.wav')
-                        print(f"High frequency detected. Recording to file {filename}")
-                        wav_file = wave.open(filename, 'wb')
-                        wav_file.setnchannels(1)
-                        wav_file.setsampwidth(2)
-                        wav_file.setframerate(config_manager.config.sample_rate)
-                        recorder.begin_recording(wav_file, filename)
-                        recorder.handle_chunk(data, True)
+                        filename = os.path.join(
+                            OUTPUT_DIR, f'chunk_{int(time.time())}.wav'
+                        )
+                        print(f'High frequency detected. Recording to file {filename}')
+                        with wave.open(filename, 'wb') as wav_file:
+                            wav_file.setnchannels(1)
+                            wav_file.setsampwidth(2)
+                            wav_file.setframerate(config_manager.config.sample_rate)
+                            recorder.begin_recording(wav_file, filename)
+                            recorder.handle_chunk(data, True)
+
+                    INCOMING.put(filename)
+                    print('Saved:', filename)
             else:
                 if DEVICE_STREAMING:
                     stop_device_streaming()

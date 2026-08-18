@@ -1,3 +1,5 @@
+-e ../intellibat_config
+astral
 batbot
 click
 gpiozero
@@ -10,8 +12,6 @@ pyserial
 RPi.GPIO
 spidev
 textual
+timezonefinder
 torch
 tqdm
--e ../intellibat_config
-astral
-timezonefinder

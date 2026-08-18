@@ -6,20 +6,18 @@ from pydantic import BaseModel, ConfigDict, Field
 
 
 class RecordingFormat(StrEnum):
-    FULL_SPECTRUM = "full_spectrum"
-    ZERO_CROSSING = "zero_crossing"
+    FULL_SPECTRUM = 'full_spectrum'
+    ZERO_CROSSING = 'zero_crossing'
 
 
 class ScheduleMode(StrEnum):
-    SUNSET_TO_SUNRISE = "sunset_to_sunrise"
-    SUNSET_MINUS_30_TO_SUNRISE_PLUS_30 = (
-        "sunset_minus_30_to_sunrise_plus_30"
-    )
-    CUSTOM = "custom"
+    SUNSET_TO_SUNRISE = 'sunset_to_sunrise'
+    SUNSET_MINUS_30_TO_SUNRISE_PLUS_30 = 'sunset_minus_30_to_sunrise_plus_30'
+    CUSTOM = 'custom'
 
 
 class IntellibatConfig(BaseModel):
-    model_config = ConfigDict(extra="forbid")
+    model_config = ConfigDict(extra='forbid')
 
     recording_format: RecordingFormat = RecordingFormat.FULL_SPECTRUM
 
@@ -30,19 +28,19 @@ class IntellibatConfig(BaseModel):
     minimum_trigger_frequency: int = Field(
         ge=6,
         le=60,
-        description="Trigger frequency in kHz",
+        description='Trigger frequency in kHz',
     )
 
     maximum_recording_length: int = Field(
         ge=3,
         le=60,
-        description="Maximum recording length in seconds",
+        description='Maximum recording length in seconds',
     )
 
     trigger_window: int = Field(
         ge=1,
         le=15,
-        description="Trigger window in seconds",
+        description='Trigger window in seconds',
     )
 
     save_noise_files: bool

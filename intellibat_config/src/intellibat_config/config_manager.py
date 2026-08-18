@@ -13,7 +13,7 @@ class ConfigManager:
     @classmethod
     def from_file(cls, file: Path):
         if file.exists():
-            with open(file, 'r') as f:
+            with open(file) as f:
                 config_data = json.load(f)
             config = IntellibatConfig.model_validate(config_data)
         else:
@@ -35,12 +35,12 @@ class ConfigManager:
         return self._config
 
     def reload(self):
-        with open(self._path, 'r') as f:
+        with open(self._path) as f:
             config_data = json.load(f)
             config = IntellibatConfig.model_validate(config_data)
             self._config = config
 
     def _write(self):
-        tmp = self._path.with_suffix(".tmp")
+        tmp = self._path.with_suffix('.tmp')
         tmp.write_text(self._config.model_dump_json(indent=2))
         tmp.replace(self._path)
