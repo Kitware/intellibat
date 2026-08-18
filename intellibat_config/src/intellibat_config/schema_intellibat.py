@@ -28,7 +28,7 @@ class IntellibatConfig(BaseModel):
     machine_learning_enabled: bool
 
     minimum_trigger_frequency: int = Field(
-        ge=6,
+        ge=5,
         le=60,
         description='Trigger frequency in kHz',
     )
