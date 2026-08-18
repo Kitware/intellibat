@@ -640,7 +640,7 @@ def chunk_triggers(data):
     peak_idx = np.argmax(magnitude)
     peak_freq = freqs[peak_idx]
 
-    peak_cutoff = 100
+    peak_cutoff = 10
     peak_idxs = np.argsort(magnitude)[-peak_cutoff:]
     peak_freqs = freqs[peak_idxs]
     print(peak_freqs.max())
