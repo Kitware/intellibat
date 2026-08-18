@@ -650,6 +650,11 @@ def record():
                 if DEVICE_STREAMING:
                     stop_device_streaming()
                 time.sleep(5)
+        except Exception as ex:
+            import traceback
+            print(f"Error Type: {type(ex).__name__}")
+            print(f"Error Message: {ex}")
+            traceback.print_exc()
         except KeyboardInterrupt:
             break
 
