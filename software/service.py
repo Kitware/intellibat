@@ -51,6 +51,7 @@ PORT = '/dev/ttyACM0'
 BAUD = 115200
 
 INCOMING = Queue()
+OUTGOING = Queue()
 
 # Configuration
 CONFIG_PATH = Path(os.getenv('INTELLIBAT_CONFIG_PATH', 'config.json'))
@@ -285,21 +286,16 @@ class Spectrogram(Thread):
         Thread.__init__(self)
         self.name = 'spectrogram'
         self.daemon = True
-        self.runner = batbot.classifier.Classifier(
-            batch_size=1,
-            num_workers=1,
-        )
-        print(self.runner.session)
+        self.spectrogram_queue = INCOMING
+        self.classifier_queue = OUTGOING
 
     def next(self):
-        return INCOMING.get(block=True)
+        return self.spectrogram_queue.get(block=True)
 
     def run(self):
-        import batbot
-
         while True:
             chunk_filepath = self.next()
-            qsize = INCOMING.qsize()
+            qsize = self.spectrogram_queue.qsize()
             if qsize > 1:
                 print(f'[spectrogram] Queue size {qsize}')
 
@@ -310,6 +306,31 @@ class Spectrogram(Thread):
                 debug=False,
             )
             print(f'Created: {compressed_paths}')
+
+            self.classifier_queue.put(compressed_paths)
+
+
+class Classifier(Thread):
+    def __init__(self):
+        Thread.__init__(self)
+        self.name = 'classifier'
+        self.daemon = True
+        self.classifier_queue = OUTGOING
+        self.runner = batbot.classifier.Classifier(
+            batch_size=1,
+            num_workers=1,
+        )
+        print(self.runner.session)
+
+    def next(self):
+        return self.classifier_queue.get(block=True)
+
+    def run(self):
+        while True:
+            compressed_paths = self.next()
+            qsize = self.classifier_queue.qsize()
+            if qsize > 1:
+                print(f'[classifier] Queue size {qsize}')
 
             results = self.runner.classify(compressed_paths)
 
@@ -679,6 +700,9 @@ def main():
 
     renderer = Spectrogram()
     renderer.start()
+
+    classifier = Classifier()
+    classifier.start()
 
     try:
         setup()
