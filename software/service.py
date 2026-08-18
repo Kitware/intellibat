@@ -334,10 +334,14 @@ class Classifier(Thread):
 
             results = self.runner.classify(compressed_paths)
 
+            results_paths = []
             for compressed_path, result in zip(compressed_paths, results):
                 results_path = compressed_path.replace('.jpg', '.results.json')
                 with open(results_path, 'w') as results_file:
                     json.dump(result, results_file, indent=4)
+                results_paths.append(results_path)
+
+            print(f'Results: {results_paths}')
 
 
 def update_chunk_dimensions():
