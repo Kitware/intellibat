@@ -25,6 +25,8 @@ class IntellibatConfig(BaseModel):
 
     triggered_recording: bool
 
+    machine_learning_enabled: bool
+
     minimum_trigger_frequency: int = Field(
         ge=6,
         le=60,

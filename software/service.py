@@ -307,7 +307,8 @@ class Spectrogram(Thread):
             )
             print(f'Created: {compressed_paths}')
 
-            self.classifier_queue.put(compressed_paths)
+            if config_manager.config.machine_learning_enabled:
+                self.classifier_queue.put(compressed_paths)
 
 
 class Classifier(Thread):
@@ -576,7 +577,8 @@ def setup():
                     'recording_format': 'full_spectrum',
                     'sample_rate': 256000,
                     'triggered_recording': True,
-                    'minimum_trigger_frequency': 20,
+                    'machine_learning_enabled': True,
+                    'minimum_trigger_frequency': 5,
                     'maximum_recording_length': 5,
                     'trigger_window': 1,
                     'save_noise_files': False,
@@ -637,6 +639,15 @@ def chunk_triggers(data):
 
     peak_idx = np.argmax(magnitude)
     peak_freq = freqs[peak_idx]
+
+    print(magnitude)
+    print(peak_idx)
+    print(peak_freq)
+
+    peak_idxs = np.argsort(magnitude)[-3:]
+    peak_freqs = freqs[peak_idxs]
+    print(peak_idxs)
+    print(peak_freqs)
 
     return peak_freq > config_manager.config.minimum_trigger_frequency * 1000
 

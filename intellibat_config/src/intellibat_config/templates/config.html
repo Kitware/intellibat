@@ -98,6 +98,21 @@
         {% endif %}
     </div>
 
+    <!-- machine_learning_enabled -->
+    <div>
+        <label>machine_learning_enabled</label>
+        <input type="checkbox"
+               name="machine_learning_enabled"
+               {% if config["machine_learning_enabled"] %}checked{% endif %}>
+        {% if errors.get("machine_learning_enabled") %}
+        <ul>
+            {% for error in errors["machine_learning_enabled"] %}
+            <li>{{ error }}</li>
+            {% endfor %}
+        </ul>
+        {% endif %}
+    </div>
+
     <!-- minimum_trigger_frequency -->
     <div>
         <label>minimum_trigger_frequency (kHz)</label>
