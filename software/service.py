@@ -30,6 +30,7 @@ import sys
 import threading
 import time
 import wave
+from dataclasses import dataclass
 from datetime import date, datetime, timedelta
 from enum import Enum
 from pathlib import Path
@@ -46,7 +47,7 @@ from timezonefinder import TimezoneFinder
 from intellibat_config import ConfigManager, ScheduleMode
 
 # Hardware/serial related constants (future configurable)
-PORT = '/dev/ttyACM0'
+PORT = "/dev/ttyACM0"
 BAUD = 115200
 
 INCOMING = Queue()
@@ -55,13 +56,32 @@ INCOMING = Queue()
 CONFIG_PATH = Path(os.getenv("INTELLIBAT_CONFIG_PATH", "config.json"))
 config_manager = ConfigManager.from_file(CONFIG_PATH)
 
+
+@dataclass
+class Device:
+    name: str
+
+    @property
+    def sanitized_name(self):
+        return self.name.replace(" ", "_")
+
+    @classmethod
+    def read(cls, device_config_path):
+        with open(device_config_path) as f:
+            device_config = json.load(f)
+        return cls(name=device_config.get("name", "intellibat"))
+
+
+DEVICE_PATH = Path(os.getenv("INTELLIBAT_DEVICE_PATH", "device.json"))
+device = Device.read(DEVICE_PATH)
+
 CHUNK_SECONDS = 1
 BYTES_PER_SAMPLE = 2
 SAMPLES_PER_CHUNK = config_manager.config.sample_rate * CHUNK_SECONDS
 BYTES_PER_CHUNK = SAMPLES_PER_CHUNK * BYTES_PER_SAMPLE
 
-FRAME_MAGIC = b'IBAT'
-FRAME_HEADER_FORMAT = '<4sIHHI'
+FRAME_MAGIC = b"IBAT"
+FRAME_HEADER_FORMAT = "<4sIHHI"
 FRAME_HEADER_SIZE = struct.calcsize(FRAME_HEADER_FORMAT)
 MAX_FRAME_SAMPLES = 4096
 SERIAL_TIMEOUT_SECONDS = 1
@@ -81,7 +101,7 @@ STREAM_READER_STOP = threading.Event()
 STREAM_READER_ERROR = None
 SAMPLE_BUFFER_CONDITION = threading.Condition()
 
-OUTPUT_DIR = 'test_recordings'
+OUTPUT_DIR = "test_recordings"
 os.makedirs(OUTPUT_DIR, exist_ok=True)
 
 ser = serial.Serial(
@@ -119,10 +139,14 @@ class RecordingStateMachine:
         self.current_recording = current_recording
         self.filename = filename
         self.chunks_written = 0
-        self.last_triggered = time.monotonic()  # assume recording starts with a bat call
+        self.last_triggered = (
+            time.monotonic()
+        )  # assume recording starts with a bat call
 
     def stop_recording(self):
-        print(f"Stopping recording for {self.filename}. Recorded {self.chunks_written} seconds")
+        print(
+            f"Stopping recording for {self.filename}. Recorded {self.chunks_written} seconds"
+        )
         if self.current_recording:
             self.current_recording.close()
             if self.filename:
@@ -189,7 +213,7 @@ class LED(Thread):
         from gpiozero import RGBLED
 
         Thread.__init__(self)
-        self.name = 'led'
+        self.name = "led"
         self.daemon = True
 
         self.gpio_red = 17
@@ -247,11 +271,11 @@ class LED(Thread):
 class UART(Thread):
     def __init__(self):
         Thread.__init__(self)
-        self.name = 'uart'
+        self.name = "uart"
         self.daemon = True
 
         self.baud_rate = 115200
-        self.uart1 = serial.Serial('/dev/ttyAMA1', self.baud_rate, timeout=0.5)
+        self.uart1 = serial.Serial("/dev/ttyAMA1", self.baud_rate, timeout=0.5)
         self.enabled = True
 
         # Run the shutdown function to close all open things when
@@ -269,16 +293,16 @@ class UART(Thread):
             if self.enabled and self.uart1.in_waiting > 0:
                 try:
                     line = self.uart1.readline()
-                    message = line.decode('utf-8').rstrip()
-                    print(f'[UART1] {message}')
+                    message = line.decode("utf-8").rstrip()
+                    print(f"[UART1] {message}")
                 except Exception:
-                    print('[UART1] ERROR: Failed to decode message')
+                    print("[UART1] ERROR: Failed to decode message")
 
 
 class Spectrogram(Thread):
     def __init__(self):
         Thread.__init__(self)
-        self.name = 'spectrogram'
+        self.name = "spectrogram"
         self.daemon = True
 
     def next(self):
@@ -291,7 +315,7 @@ class Spectrogram(Thread):
             chunk_filepath = self.next()
             qsize = INCOMING.qsize()
             if qsize > 1:
-                print(f'[spectrogram] Queue size {qsize}')
+                print(f"[spectrogram] Queue size {qsize}")
 
             _, compressed_paths, metadata_path, metadata = batbot.spectrogram.compute(
                 chunk_filepath,
@@ -299,7 +323,7 @@ class Spectrogram(Thread):
                 quiet=True,
                 debug=False,
             )
-            print(f'Created: {compressed_paths}')
+            print(f"Created: {compressed_paths}")
 
 
 def update_chunk_dimensions():
@@ -328,7 +352,7 @@ def maybe_print_comm_warning(message: str):
 
 
 def write_device_command(command: str, settle_seconds: float = 0.05):
-    ser.write(f'{command}\n'.encode('ascii'))
+    ser.write(f"{command}\n".encode("ascii"))
     ser.flush()
     time.sleep(settle_seconds)
 
@@ -338,7 +362,7 @@ def stop_device_streaming():
     global STREAM_READER_THREAD
 
     STREAM_READER_STOP.set()
-    write_device_command('STOP')
+    write_device_command("STOP")
     if STREAM_READER_THREAD is not None:
         STREAM_READER_THREAD.join(timeout=SERIAL_TIMEOUT_SECONDS + 0.5)
         STREAM_READER_THREAD = None
@@ -356,7 +380,7 @@ def start_device_streaming():
     reset_frame_tracking()
     STREAM_READER_ERROR = None
     STREAM_READER_STOP.clear()
-    write_device_command('START', settle_seconds=0.02)
+    write_device_command("START", settle_seconds=0.02)
     STREAM_READER_THREAD = threading.Thread(target=stream_reader_loop, daemon=True)
     STREAM_READER_THREAD.start()
     DEVICE_STREAMING = True
@@ -367,7 +391,7 @@ def configure_device_sample_rate():
     was_streaming = DEVICE_STREAMING
 
     stop_device_streaming()
-    write_device_command(f'SET_SR:{config_manager.config.sample_rate}')
+    write_device_command(f"SET_SR:{config_manager.config.sample_rate}")
     ser.reset_input_buffer()
     CONFIGURED_SAMPLE_RATE = config_manager.config.sample_rate
 
@@ -379,7 +403,7 @@ def read_exact(byte_count: int) -> bytes:
     data = ser.read(byte_count)
     if len(data) != byte_count:
         raise TimeoutError(
-            f'Incomplete serial read: expected {byte_count}, got {len(data)}'
+            f"Incomplete serial read: expected {byte_count}, got {len(data)}"
         )
     return data
 
@@ -400,7 +424,7 @@ def read_frame():
         FRAME_HEADER_FORMAT, header
     )
     if magic != FRAME_MAGIC or sample_count == 0 or sample_count > MAX_FRAME_SAMPLES:
-        maybe_print_comm_warning('Invalid frame header; resynchronizing USB stream')
+        maybe_print_comm_warning("Invalid frame header; resynchronizing USB stream")
         return read_frame()
 
     payload = read_exact(sample_count * BYTES_PER_SAMPLE)
@@ -418,29 +442,31 @@ def append_next_frame_samples():
 
     if sequence != EXPECTED_FRAME_SEQUENCE:
         maybe_print_comm_warning(
-            f'USB frame sequence gap: expected {EXPECTED_FRAME_SEQUENCE}, got {sequence}'
+            f"USB frame sequence gap: expected {EXPECTED_FRAME_SEQUENCE}, got {sequence}"
         )
 
     EXPECTED_FRAME_SEQUENCE = (sequence + 1) & 0xFFFFFFFF
 
     if dropped_samples != LAST_DROPPED_SAMPLES:
         maybe_print_comm_warning(
-            f'Pico dropped ADC samples: {dropped_samples - LAST_DROPPED_SAMPLES} new, '
-            f'{dropped_samples} total'
+            f"Pico dropped ADC samples: {dropped_samples - LAST_DROPPED_SAMPLES} new, "
+            f"{dropped_samples} total"
         )
         LAST_DROPPED_SAMPLES = dropped_samples
 
     expected_payload_len = sample_count * BYTES_PER_SAMPLE
     if len(payload) != expected_payload_len:
         raise RuntimeError(
-            f'Invalid frame payload: expected {expected_payload_len}, got {len(payload)}'
+            f"Invalid frame payload: expected {expected_payload_len}, got {len(payload)}"
         )
 
     append_sample_payload(payload)
 
 
 def append_sample_payload(payload: bytes):
-    max_pending_bytes = config_manager.config.sample_rate * BYTES_PER_SAMPLE * MAX_PENDING_SECONDS
+    max_pending_bytes = (
+        config_manager.config.sample_rate * BYTES_PER_SAMPLE * MAX_PENDING_SECONDS
+    )
 
     with SAMPLE_BUFFER_CONDITION:
         PENDING_SAMPLE_BYTES.extend(payload)
@@ -449,7 +475,7 @@ def append_sample_payload(payload: bytes):
             overflow += overflow % BYTES_PER_SAMPLE
             del PENDING_SAMPLE_BYTES[:overflow]
             maybe_print_comm_warning(
-                f'Pi processing backlog overflow: dropped {overflow // BYTES_PER_SAMPLE} buffered samples'
+                f"Pi processing backlog overflow: dropped {overflow // BYTES_PER_SAMPLE} buffered samples"
             )
         SAMPLE_BUFFER_CONDITION.notify_all()
 
@@ -463,19 +489,19 @@ def stream_reader_loop():
         except TimeoutError:
             if DEVICE_STREAMING and not STREAM_READER_STOP.is_set():
                 maybe_print_comm_warning(
-                    'Timed out waiting for framed USB data from Pico'
+                    "Timed out waiting for framed USB data from Pico"
                 )
         except (OSError, KeyboardInterrupt):
             STREAM_READER_ERROR = None
             with SAMPLE_BUFFER_CONDITION:
                 SAMPLE_BUFFER_CONDITION.notify_all()
-            maybe_print_comm_warning('\n\nFinishing...')
+            maybe_print_comm_warning("\n\nFinishing...")
             return
         except Exception as exc:
             STREAM_READER_ERROR = exc
             with SAMPLE_BUFFER_CONDITION:
                 SAMPLE_BUFFER_CONDITION.notify_all()
-            maybe_print_comm_warning(f'\n\nUSB stream reader stopped: {exc}')
+            maybe_print_comm_warning(f"\n\nUSB stream reader stopped: {exc}")
             return
 
 
@@ -483,7 +509,7 @@ def read_sample_chunk() -> bytes:
     with SAMPLE_BUFFER_CONDITION:
         while len(PENDING_SAMPLE_BYTES) < BYTES_PER_CHUNK:
             if STREAM_READER_ERROR is not None:
-                raise RuntimeError('USB stream reader failed') from STREAM_READER_ERROR
+                raise RuntimeError("USB stream reader failed") from STREAM_READER_ERROR
             SAMPLE_BUFFER_CONDITION.wait(timeout=1)
 
         data = bytes(PENDING_SAMPLE_BYTES[:BYTES_PER_CHUNK])
@@ -500,10 +526,16 @@ def update_recording_schedule():
         tz_finder = TimezoneFinder()
         tz_name = tz_finder.timezone_at(lat=config.latitude, lng=config.longitude)
         if not tz_name:
-            print("Could not determine time zone. Please update the config and restart.")
+            print(
+                "Could not determine time zone. Please update the config and restart."
+            )
             sys.exit(1)
-        location = LocationInfo(latitude=config.latitude, longitude=config.longitude, timezone=tz_name)
-        sun_info = sun(location.observer, date=date.today(), tzinfo=ZoneInfo(location.timezone))
+        location = LocationInfo(
+            latitude=config.latitude, longitude=config.longitude, timezone=tz_name
+        )
+        sun_info = sun(
+            location.observer, date=date.today(), tzinfo=ZoneInfo(location.timezone)
+        )
         sunset = sun_info["sunset"]
         sunrise = sun_info["sunrise"]
         if config.schedule_mode == ScheduleMode.SUNSET_TO_SUNRISE:
@@ -515,12 +547,12 @@ def update_recording_schedule():
 
 
 def setup():
-    print('Setting up...')
+    print("Setting up...")
     # Try and find the settings file
     if not CONFIG_PATH.exists():
         CONFIG_PATH.parent.mkdir(parents=True, exist_ok=True)
 
-        with open(CONFIG_PATH, 'w') as f:
+        with open(CONFIG_PATH, "w") as f:
             json.dump(
                 {
                     "recording_format": "full_spectrum",
@@ -534,13 +566,13 @@ def setup():
                     "longitude": 0,
                     "schedule_mode": "custom",
                     "start_time": "17:00",
-                    "end_time": "05:00"
+                    "end_time": "05:00",
                 },
                 f,
                 indent=2,
             )
         print(
-            f'Config file created at {CONFIG_PATH}. Please review and restart service.'
+            f"Config file created at {CONFIG_PATH}. Please review and restart service."
         )
         sys.exit(1)
     # Config path exists
@@ -577,7 +609,7 @@ def should_record():
 
 
 def chunk_triggers(data):
-    samples = np.frombuffer(data, dtype='<i2')
+    samples = np.frombuffer(data, dtype="<i2")
 
     fft = np.fft.rfft(samples)
     freqs = np.fft.rfftfreq(len(samples), d=1 / config_manager.config.sample_rate)
@@ -592,8 +624,10 @@ def chunk_triggers(data):
 
 
 def record():
-    print('Reading...')
-    recorder = RecordingStateMachine(config_manager=config_manager, spectrogram_queue=INCOMING)
+    print("Reading...")
+    recorder = RecordingStateMachine(
+        config_manager=config_manager, spectrogram_queue=INCOMING
+    )
     while True:
         try:
             maybe_reload_config()
@@ -604,7 +638,7 @@ def record():
 
                 data = read_sample_chunk()
                 if len(data) != BYTES_PER_CHUNK:
-                    print('Incomplete read:', len(data))
+                    print("Incomplete read:", len(data))
                     continue
 
                 triggers = chunk_triggers(data)
@@ -615,9 +649,11 @@ def record():
                 else:  # Recorder is idle
                     continuous_mode = not config_manager.config.triggered_recording
                     if triggers or continuous_mode:
-                        filename = os.path.join(OUTPUT_DIR, f'chunk_{int(time.time())}.wav')
+                        filename = os.path.join(
+                            OUTPUT_DIR, f"{device.sanitized_name}_{datetime.now():%Y%m%d_%H%M%S}.wav"
+                        )
                         print(f"High frequency detected. Recording to file {filename}")
-                        wav_file = wave.open(filename, 'wb')
+                        wav_file = wave.open(filename, "wb")
                         wav_file.setnchannels(1)
                         wav_file.setsampwidth(2)
                         wav_file.setframerate(config_manager.config.sample_rate)
@@ -645,7 +681,7 @@ def main():
         setup()
         record()
     finally:
-        print('\n\nShutting Down...')
+        print("\n\nShutting Down...")
         if DEVICE_STREAMING:
             stop_device_streaming()
 
@@ -656,5 +692,5 @@ def main():
         time.sleep(1)
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     main()
