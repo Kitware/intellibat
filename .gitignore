@@ -215,3 +215,7 @@ config.json
 assets/
 reference/
 *.log
+
+scripts/*.png
+scripts/*.txt
+

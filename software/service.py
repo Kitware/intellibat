@@ -234,6 +234,7 @@ class LED(Thread):
 
         while True:
             try:
+                self.led.value = 0.1
                 for step in range(self.steps_per_cycle):
                     hue = step / self.steps_per_cycle
 
