@@ -3,7 +3,7 @@
 #
 # Create an intellibat user
 id -u intellibat &> /dev/null || sudo useradd --system --no-create-home intellibat
-sudo usermod -aG plugdev,dialout,gpio intellibat
+sudo usermod -aG plugdev,dialout,gpio,video intellibat
 sudo usermod -aG intellibat $(whoami)
 
 export APP_DIR=/opt/intellibat/
@@ -54,6 +54,8 @@ sudo nmcli connection modify intellibat-ap wifi-sec.key-mgmt wpa-psk
 sudo nmcli connection modify intellibat-ap wifi-sec.psk "${INTELLIBAT_AP_PASSWORD:-intellibat123}"
 
 # Set up the recording and config services
+sudo apt install -y udisks2
+sudo install -m 644 software/49-intellibat-storage.rules /etc/polkit-1/rules.d/49-intellibat-storage.rules
 sudo cp software/intellibat.service /etc/systemd/system/intellibat.service
 sudo cp software/intellibat_config.service /etc/systemd/system/intellibat_config.service
 sudo systemctl daemon-reload

@@ -1,0 +1,10 @@
+// Allow the headless IntelliBat service to mount non-system removable media.
+// Formatting, partition changes, unlocking and mounting system disks are not granted.
+polkit.addRule(function(action, subject) {
+    if (subject.user !== "intellibat") return;
+    if (action.id === "org.freedesktop.udisks2.filesystem-mount" ||
+        (action.id === "org.freedesktop.udisks2.filesystem-mount-other-seat" &&
+         action.lookup("drive.removable") === "true")) {
+        return polkit.Result.YES;
+    }
+});

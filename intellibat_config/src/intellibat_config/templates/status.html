@@ -1,0 +1,17 @@
+{% extends "base.html" %}
+{% block title %}System status · IntelliBat{% endblock %}
+{% block content %}
+<div class="page-heading"><div><p class="eyebrow">LIVE TELEMETRY</p><h1>System status</h1><p>Recorder activity, service health, and Raspberry Pi hardware.</p></div><button id="refresh-status" class="secondary">Refresh status</button></div>
+<p id="page-error" class="notice error" role="alert" hidden></p>
+<div id="status-summary" class="metric-grid" aria-live="polite"><p class="loading">Reading device telemetry…</p></div>
+<div class="panel-grid">
+    <section class="panel wide"><div class="section-heading"><h2>Recorder &amp; processing</h2><span id="heartbeat-state" class="badge">Waiting for heartbeat</span></div><div id="runtime-status"></div></section>
+    <section class="panel wide"><h2>Services</h2><div id="service-status" class="table-scroll"></div></section>
+    <section class="panel"><h2>Raspberry Pi hardware</h2><div id="hardware-status"></div></section>
+    <section class="panel"><h2>Memory &amp; cooling</h2><div id="memory-status"></div></section>
+    <section class="panel"><h2>Battery &amp; power</h2><div id="power-status"></div></section>
+    <section class="panel"><h2>Network &amp; clock</h2><div id="network-status"></div></section>
+    <section class="panel wide"><h2>Device storage</h2><div id="disk-status" class="storage-grid"></div></section>
+</div>
+<p class="footnote">Updates every 10 seconds. Battery readings appear when a Linux power-supply driver exposes them. Missing sensors are shown as unavailable.</p>
+{% endblock %}

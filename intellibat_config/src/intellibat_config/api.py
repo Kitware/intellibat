@@ -36,6 +36,7 @@ def get_config(request: Request):
         request=request,
         name='config.html',
         context={
+            'active_tab': 'settings',
             'config': config_raw,
             'errors': {},
         },
@@ -53,6 +54,7 @@ async def update_config(request: Request):
             'sample_rate': int(form['sample_rate']),
             'triggered_recording': form.get('triggered_recording', False),
             'machine_learning_enabled': form.get('machine_learning_enabled', False),
+            'led_enabled': form.get('led_enabled', False),
             'minimum_trigger_frequency': form['minimum_trigger_frequency'],
             'maximum_recording_length': form['maximum_recording_length'],
             'trigger_window': form['trigger_window'],
@@ -64,19 +66,19 @@ async def update_config(request: Request):
             'end_time': form['end_time'],
         }
         config_manager.update(config_update)
-    except ValidationError as e:
-        import traceback
-
-        traceback.print_exc()
+    except (ValidationError, ValueError, KeyError) as e:
         errors = {}
-        for error in e.errors():
-            field = error['loc'][0]
-            errors.setdefault(field, []).append(error['msg'])
+        if isinstance(e, ValidationError):
+            for error in e.errors():
+                field = error['loc'][0]
+                errors.setdefault(field, []).append(error['msg'])
+        else:
+            errors['form'] = ['Please supply valid values for all settings.']
 
         return templates.TemplateResponse(
             request=request,
             name='config.html',
-            context={'config': config_update, 'errors': errors},
+            context={'active_tab': 'settings', 'config': dict(form), 'errors': errors},
             status_code=400,
         )
-    return RedirectResponse('/', status_code=303)
+    return RedirectResponse('/config/?saved=1', status_code=303)

@@ -19,6 +19,9 @@ StandardError=journal
 Environment=PYTHONUNBUFFERED=1
 Environment=PIP_NO_CACHE_DIR=1
 Environment=INTELLIBAT_CONFIG_PATH=/etc/intellibat/config.json
+Environment=INTELLIBAT_RECORDINGS_PATH=/opt/intellibat/test_recordings
+Environment=INTELLIBAT_SPECTROGRAMS_PATH=/opt/intellibat/output
+Environment=INTELLIBAT_TELEMETRY_PATH=/run/intellibat/status.json
 
 [Install]
 WantedBy=multi-user.target

@@ -1,48 +1,16 @@
-<!doctype html>
-<html>
-<head>
-    <title>IntelliBat Config</title>
-    <style>
-        body {
-            font-family: sans-serif;
-            margin: 1rem;
-            font-size: 2rem;
-        }
-
-        label {
-            display: block;
-            margin-top: 2rem;
-            font-weight: bold;
-        }
-
-        input:not([type="chekcbox"]), select, button {
-            width: 100%;
-            box-sizing: border-box;
-            padding: 0.5rem;
-            margin-top: 0.25rem;
-            font-size: 2rem;
-        }
-
-        input[type="checkbox"] {
-            width: 2rem;
-            height: 2rem;
-        }
-
-        button {
-            margin-top: 1.5rem;
-        }
-    </style>
-</head>
-<body>
-
-<h1>IntelliBat Configuration</h1>
-
-<form method="post">
+{% extends "base.html" %}
+{% block title %}Settings · IntelliBat{% endblock %}
+{% block content %}
+<div class="page-heading"><div><p class="eyebrow">DEVICE CONFIGURATION</p><h1>Settings</h1><p>Recording, detection, schedule, and LED controls.</p></div></div>
+{% if request.query_params.get('saved') %}<p class="notice success" role="status">Settings saved. The recorder will apply them on its next configuration reload.</p>{% endif %}
+{% if errors %}<p class="notice error" role="alert">Settings were not saved. Please check the highlighted fields.</p>{% endif %}
+<section class="panel">
+<form method="post" class="settings-grid">
 
     <!-- recording_format -->
     <div>
-        <label>recording_format</label>
-        <select name="recording_format">
+        <label for="recording_format">recording_format</label>
+        <select id="recording_format" name="recording_format">
             <option value="full_spectrum"
                 {% if config["recording_format"] == "full_spectrum" %}selected{% endif %}>
                 full_spectrum
@@ -59,18 +27,18 @@
 
     <!-- sample_rate -->
     <div>
-        <label>sample_rate</label>
-        <select name="sample_rate">
+        <label for="sample_rate">sample_rate</label>
+        <select id="sample_rate" name="sample_rate">
             <option value="256000"
-                {% if config["sample_rate"] == 256000 %}selected{% endif %}>
+                {% if config["sample_rate"]|string == "256000" %}selected{% endif %}>
                 256000
             </option>
             <option value="384000"
-                {% if config["sample_rate"] == 384000 %}selected{% endif %}>
+                {% if config["sample_rate"]|string == "384000" %}selected{% endif %}>
                 384000
             </option>
             <option value="500000"
-                {% if config["sample_rate"] == 500000 %}selected{% endif %}>
+                {% if config["sample_rate"]|string == "500000" %}selected{% endif %}>
                 500000
             </option>
         </select>
@@ -85,9 +53,9 @@
 
     <!-- triggered_recording -->
     <div>
-        <label>triggered_recording</label>
+        <label for="triggered_recording">triggered_recording</label>
         <input type="checkbox"
-               name="triggered_recording"
+               id="triggered_recording" name="triggered_recording"
                {% if config["triggered_recording"] %}checked{% endif %}>
         {% if errors.get("triggered_recording") %}
         <ul>
@@ -100,9 +68,9 @@
 
     <!-- machine_learning_enabled -->
     <div>
-        <label>machine_learning_enabled</label>
+        <label for="machine_learning_enabled">machine_learning_enabled</label>
         <input type="checkbox"
-               name="machine_learning_enabled"
+               id="machine_learning_enabled" name="machine_learning_enabled"
                {% if config["machine_learning_enabled"] %}checked{% endif %}>
         {% if errors.get("machine_learning_enabled") %}
         <ul>
@@ -113,11 +81,32 @@
         {% endif %}
     </div>
 
+    <!-- led_enabled -->
+    <div>
+        <label for="led_enabled">led_enabled</label>
+        <input type="checkbox"
+               id="led_enabled"
+               name="led_enabled"
+               aria-describedby="led_enabled_help"
+               {% if config["led_enabled"] %}checked{% endif %}>
+        <p id="led_enabled_help">
+            Turn the LED on or off while the service stays online.
+            Changes apply on the next configuration reload (about 60 seconds).
+        </p>
+        {% if errors.get("led_enabled") %}
+        <ul>
+            {% for error in errors["led_enabled"] %}
+            <li>{{ error }}</li>
+            {% endfor %}
+        </ul>
+        {% endif %}
+    </div>
+
     <!-- minimum_trigger_frequency -->
     <div>
-        <label>minimum_trigger_frequency (kHz)</label>
+        <label for="minimum_trigger_frequency">minimum_trigger_frequency (kHz)</label>
         <input type="number"
-               name="minimum_trigger_frequency"
+               id="minimum_trigger_frequency" name="minimum_trigger_frequency"
                min="5"
                max="60"
                value="{{ config['minimum_trigger_frequency'] }}">
@@ -132,9 +121,9 @@
 
     <!-- maximum_recording_length -->
     <div>
-        <label>maximum_recording_length (seconds)</label>
+        <label for="maximum_recording_length">maximum_recording_length (seconds)</label>
         <input type="number"
-               name="maximum_recording_length"
+               id="maximum_recording_length" name="maximum_recording_length"
                min="3"
                max="60"
                value="{{ config['maximum_recording_length'] }}">
@@ -149,9 +138,9 @@
 
     <!-- trigger_window -->
     <div>
-        <label>trigger_window (seconds)</label>
+        <label for="trigger_window">trigger_window (seconds)</label>
         <input type="number"
-               name="trigger_window"
+               id="trigger_window" name="trigger_window"
                min="1"
                max="15"
                value="{{ config['trigger_window'] }}">
@@ -166,9 +155,9 @@
 
     <!-- save_noise_files -->
     <div>
-        <label>save_noise_files</label>
+        <label for="save_noise_files">save_noise_files</label>
         <input type="checkbox"
-               name="save_noise_files"
+               id="save_noise_files" name="save_noise_files"
                {% if config["save_noise_files"] %}checked{% endif %}>
         {% if errors.get("save_noise_files") %}
         <ul>
@@ -181,10 +170,10 @@
 
     <!-- latitude -->
     <div>
-        <label>latitude</label>
+        <label for="latitude">latitude</label>
         <input type="number"
                step="any"
-               name="latitude"
+               id="latitude" name="latitude"
                min="-90"
                max="90"
                value="{{ config['latitude'] }}">
@@ -199,10 +188,10 @@
 
     <!-- longitude -->
     <div>
-        <label>longitude</label>
+        <label for="longitude">longitude</label>
         <input type="number"
                step="any"
-               name="longitude"
+               id="longitude" name="longitude"
                min="-180"
                max="180"
                value="{{ config['longitude'] }}">
@@ -217,8 +206,8 @@
 
     <!-- schedule_mode -->
     <div>
-        <label>schedule_mode</label>
-        <select name="schedule_mode">
+        <label for="schedule_mode">schedule_mode</label>
+        <select id="schedule_mode" name="schedule_mode">
             <option value="sunset_to_sunrise"
                 {% if config["schedule_mode"] == "sunset_to_sunrise" %}selected{% endif %}>
                 sunset_to_sunrise
@@ -242,9 +231,9 @@
     </div>
 
     <div>
-        <label>start_time as HH:MM:ss (for custom schedule only)</label>
+        <label for="start_time">start_time as HH:MM:ss (for custom schedule only)</label>
         <input
-            name="start_time"
+            id="start_time" name="start_time"
             value="{{ config['start_time'] }}"
         >
         {% if errors.get("start_time") %}
@@ -257,9 +246,9 @@
     </div>
 
     <div>
-        <label>end_time as HH:MM:ss (for custom schedule only)</label>
+        <label for="end_time">end_time as HH:MM:ss (for custom schedule only)</label>
         <input
-            name="end_time"
+            id="end_time" name="end_time"
             value="{{ config['end_time'] }}"
         >
         {% if errors.get("end_time") %}
@@ -271,9 +260,8 @@
         {% endif %}
     </div>
 
-    <button type="submit">Save</button>
+    <div class="settings-actions"><button type="submit">Save settings</button><p>Changes apply on the next configuration reload, about 60 seconds.</p></div>
 
 </form>
-
-</body>
-</html>
+</section>
+{% endblock %}

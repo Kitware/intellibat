@@ -1,0 +1,27 @@
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="theme-color" content="#123c32">
+    <title>{% block title %}IntelliBat{% endblock %}</title>
+    <link rel="stylesheet" href="/static/app.css">
+    <script src="/static/app.js" defer></script>
+</head>
+<body data-page="{{ active_tab }}">
+<a class="skip-link" href="#main">Skip to content</a>
+<header class="masthead">
+    <div class="brand"><span class="brand-mark" aria-hidden="true">◒</span><div>IntelliBat<small>FIELD STATION</small></div></div>
+    <span class="station-label">Acoustic monitoring</span>
+</header>
+<nav class="tabs" aria-label="Main pages">
+    <a href="/config/" {% if active_tab == 'settings' %}aria-current="page"{% endif %}>Settings</a>
+    <a href="/status" {% if active_tab == 'status' %}aria-current="page"{% endif %}>System status</a>
+    <a href="/data" {% if active_tab == 'data' %}aria-current="page"{% endif %}>Recorded data</a>
+</nav>
+<main id="main">
+    {% block content %}{% endblock %}
+</main>
+<footer>IntelliBat · Local device interface <span id="updated-at"></span></footer>
+</body>
+</html>

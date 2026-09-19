@@ -1,0 +1,32 @@
+{% extends "base.html" %}
+{% block title %}Recorded data · IntelliBat{% endblock %}
+{% block content %}
+<div class="page-heading"><div><p class="eyebrow">COLLECTION OVERVIEW</p><h1>Recorded data</h1><p>Explore detections and take a copy of your field recordings.</p></div><button id="refresh-data" class="secondary">Refresh data</button></div>
+<p id="page-error" class="notice error" role="alert" hidden></p>
+<div id="data-summary" class="metric-grid"><p class="loading">Reading recordings…</p></div>
+<section class="panel"><div class="section-heading"><div><h2>Recordings by species</h2><p>All collected recordings · one top prediction per WAV file</p></div><span class="badge">Confidence ≥25%</span></div><div id="species-histogram"></div><p id="species-breakdown" class="footnote"></p></section>
+<section class="panel"><div class="section-heading"><div><h2>Species activity</h2><p>15-minute intervals · <span id="timeline-timezone"></span></p></div><div class="inline-controls"><label for="timeline-day">Day</label><input type="date" id="timeline-day"></div></div><p class="chart-legend"><span class="legend-solid"></span>Top prediction <span class="legend-faded"></span>Alternative prediction · Bar heights: &gt;50%, ≥25%, ≥10% confidence</p><div id="species-timeline" class="chart-scroll" tabindex="0" aria-label="Scrollable species activity chart"></div><p class="footnote">Numbers count winning predictions with confidence ≥25%. NOISE competes for the top prediction but is excluded from detection bars. Each WAV counts once; image tiles are combined using their ML window counts.</p></section>
+<div class="data-columns">
+<section class="panel copy-panel">
+    <div class="section-heading"><div><h2>Copy to external drive</h2><p>WAV audio, spectrograms, metadata, and ML results.</p></div></div>
+    <p id="copy-error" class="notice error" role="alert" hidden></p>
+    <div class="field"><label for="drive-select">Storage medium</label><div class="input-action"><select id="drive-select"><option value="">Select an external drive</option></select><button id="refresh-drives" class="secondary">Refresh</button></div></div>
+    <div id="drive-detail" class="muted">Connect a USB drive to the Raspberry Pi.</div>
+    <button id="mount-drive" class="secondary" hidden>Mount selected drive</button>
+    <div class="field"><label for="folder-select">Destination folder</label><select id="folder-select" disabled><option value="">Drive root</option></select><p class="field-help">Choose the drive root or one folder directly inside it.</p></div>
+    <div class="field"><label for="new-folder">Create a folder on this drive</label><div class="input-action"><input id="new-folder" type="text" maxlength="200" placeholder="e.g. September survey" autocomplete="off"><button id="create-folder" class="secondary" disabled>Create</button></div></div>
+    <p class="notice">Incremental copy: matching files are skipped. Existing files with different contents are reported as conflicts and preserved. Files still being recorded or processed are left for the next copy.</p>
+    <button id="estimate-copy" disabled>Preview copy size</button>
+    <div id="copy-job" class="copy-job" aria-live="polite" hidden>
+        <h3 id="copy-state"></h3><p id="copy-destination" class="muted"></p>
+        <div id="copy-estimate"></div>
+        <progress id="copy-progress" max="100" aria-label="Copy progress"></progress>
+        <p id="copy-progress-text"></p><p id="copy-current-file" class="filename"></p>
+        <p id="copy-conflicts" class="notice" hidden></p>
+        <div class="button-row"><button id="start-copy" hidden>Start copy</button><button id="cancel-copy" class="secondary" hidden>Cancel</button></div>
+    </div>
+</section>
+<section class="panel recent-panel"><div class="section-heading"><div><h2>Recent spectrograms</h2><p>The 10 most recent recording images and ML results.</p></div></div><div id="recent-recordings" class="recording-list" tabindex="0" aria-label="10 most recent recording images"><p class="loading">Loading images…</p></div></section>
+</div>
+<p class="footnote" id="data-range"></p>
+{% endblock %}

@@ -27,6 +27,8 @@ class IntellibatConfig(BaseModel):
 
     machine_learning_enabled: bool
 
+    led_enabled: bool = True
+
     minimum_trigger_frequency: int = Field(
         ge=5,
         le=60,

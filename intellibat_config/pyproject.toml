@@ -31,4 +31,4 @@ package-dir = {"" = "src"}
 where = ["src"]
 
 [tool.setuptools.package-data]
-intellibat_config = ["templates/*.html", "config.json"]
+intellibat_config = ["templates/*.html", "static/*.css", "static/*.js", "config.json"]

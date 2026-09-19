@@ -1,6 +1,7 @@
 {
   "end_time": "07:00",
   "latitude": 0,
+  "led_enabled": true,
   "longitude": 0,
   "machine_learning_enabled": true,
   "maximum_recording_length": 5,

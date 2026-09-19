@@ -23,6 +23,7 @@ Not supported:
 """
 
 import atexit
+import colorsys
 import json
 import os
 import struct
@@ -83,7 +84,19 @@ STREAM_READER_STOP = threading.Event()
 STREAM_READER_ERROR = None
 SAMPLE_BUFFER_CONDITION = threading.Condition()
 
-OUTPUT_DIR = 'test_recordings'
+OUTPUT_DIR = os.getenv('INTELLIBAT_RECORDINGS_PATH', 'test_recordings')
+SPECTROGRAM_DIR = os.getenv('INTELLIBAT_SPECTROGRAMS_PATH', 'output')
+TELEMETRY_PATH = Path(os.getenv('INTELLIBAT_TELEMETRY_PATH', 'runtime/status.json'))
+RUNTIME_STATUS = {
+    'recording': False,
+    'current_recording': None,
+    'last_audio_at': None,
+    'last_recording_at': None,
+    'last_classification_at': None,
+    'recordings_completed': 0,
+    'last_error': None,
+}
+WORKER_THREADS = []
 os.makedirs(OUTPUT_DIR, exist_ok=True)
 
 ser = serial.Serial(
@@ -120,6 +133,7 @@ class RecordingStateMachine:
         self.state = RecordingState.RECORDING
         self.current_recording = current_recording
         self.filename = filename
+        RUNTIME_STATUS.update(recording=True, current_recording=filename)
         self.chunks_written = 0
         self.last_triggered = (
             time.monotonic()
@@ -132,12 +146,18 @@ class RecordingStateMachine:
         if self.current_recording:
             self.current_recording.close()
             if self.filename:
+                # Publish only a closed WAV with a complete header. Exporters
+                # ignore .part files, including any left by a power loss.
+                os.replace(f'{self.filename}.part', self.filename)
                 self.spectrogram_queue.put(self.filename)
+                RUNTIME_STATUS['recordings_completed'] += 1
+                RUNTIME_STATUS['last_recording_at'] = time.time()
 
         self.state = RecordingState.IDLE
         self.current_recording = None
         self.filename = None
         self.chunks_written = 0
+        RUNTIME_STATUS.update(recording=False, current_recording=None)
 
     def handle_chunk(self, data, triggers):
         if self.state == RecordingState.IDLE:
@@ -190,6 +210,45 @@ class RecordingSchedule:
 recording_schedule = RecordingSchedule(datetime.now().time(), datetime.now().time())
 
 
+class Telemetry(Thread):
+    def __init__(self):
+        super().__init__(name='telemetry', daemon=True)
+        self.stopped = threading.Event()
+
+    def run(self):
+        while not self.stopped.is_set():
+            try:
+                config = config_manager.config
+                status = {
+                    **RUNTIME_STATUS,
+                    'updated_at': time.time(),
+                    'pid': os.getpid(),
+                    'streaming': DEVICE_STREAMING,
+                    'sample_rate': CONFIGURED_SAMPLE_RATE,
+                    'buffered_bytes': len(PENDING_SAMPLE_BYTES),
+                    'dropped_samples': LAST_DROPPED_SAMPLES,
+                    'spectrogram_queue': INCOMING.qsize(),
+                    'classifier_queue': OUTGOING.qsize(),
+                    'led_enabled': config.led_enabled,
+                    'machine_learning_enabled': config.machine_learning_enabled,
+                    'triggered_recording': config.triggered_recording,
+                    'schedule_mode': config.schedule_mode.value,
+                    'schedule_start': str(recording_schedule.start_time),
+                    'schedule_end': str(recording_schedule.end_time),
+                    'config_loaded_at': LAST_RELOAD_TIME.timestamp(),
+                    'threads': {
+                        worker.name: worker.is_alive() for worker in WORKER_THREADS
+                    },
+                }
+                TELEMETRY_PATH.parent.mkdir(parents=True, exist_ok=True)
+                temporary = TELEMETRY_PATH.with_suffix('.tmp')
+                temporary.write_text(json.dumps(status))
+                temporary.replace(TELEMETRY_PATH)
+            except Exception as error:
+                print(f'Could not write recorder telemetry: {error}')
+            self.stopped.wait(5)
+
+
 class LED(Thread):
     def __init__(self):
         from gpiozero import RGBLED
@@ -204,6 +263,7 @@ class LED(Thread):
 
         # Smaller delay = smoother/faster updates
         self.step_delay = 0.02
+        self.value = 0.1
 
         # Larger number = smoother color transition
         self.steps_per_cycle = 360
@@ -229,21 +289,27 @@ class LED(Thread):
             self.led.off()
         self.led = None
 
-    def run(self):
-        import colorsys
+    def update(self, hue):
+        # hsv_to_rgb returns red, green, blue values from 0.0 to 1.0
+        if self.led:
+            if config_manager.config.led_enabled:
+                self.led.color = colorsys.hsv_to_rgb(hue, 1.0, self.value)
+            else:
+                self.led.off()
 
+    def run(self):
         while True:
             try:
-                self.led.value = 0.1
                 for step in range(self.steps_per_cycle):
                     hue = step / self.steps_per_cycle
+                    self.update(hue)
+                    time.sleep(self.step_delay)
 
-                    # hsv_to_rgb returns red, green, blue values from 0.0 to 1.0
-                    red, green, blue = colorsys.hsv_to_rgb(hue, 1.0, 1.0)
-
-                    if self.led:
-                        self.led.color = (red, green, blue)
-
+                # Keep checking configuration during the pause so the LED can
+                # be switched off and back on without stopping this thread.
+                hold_until = time.monotonic() + 60.0
+                while time.monotonic() < hold_until:
+                    self.update(0)
                     time.sleep(self.step_delay)
             except KeyboardInterrupt:
                 break
@@ -277,6 +343,7 @@ class UART(Thread):
                 try:
                     line = self.uart1.readline()
                     message = line.decode('utf-8').rstrip()
+                    RUNTIME_STATUS['uart_message'] = message
                     print(f'[UART1] {message}')
                 except Exception:
                     print('[UART1] ERROR: Failed to decode message')
@@ -302,6 +369,7 @@ class Spectrogram(Thread):
 
             _, compressed_paths, metadata_path, metadata = batbot.spectrogram.compute(
                 chunk_filepath,
+                output_folder=SPECTROGRAM_DIR,
                 fast_mode=True,
                 quiet=True,
                 debug=False,
@@ -339,10 +407,12 @@ class Classifier(Thread):
             results_paths = []
             for compressed_path, result in zip(compressed_paths, results):
                 results_path = compressed_path.replace('.jpg', '.results.json')
-                with open(results_path, 'w') as results_file:
+                with open(f'{results_path}.tmp', 'w') as results_file:
                     json.dump(result, results_file, indent=4)
+                os.replace(f'{results_path}.tmp', results_path)
                 results_paths.append(results_path)
 
+            RUNTIME_STATUS['last_classification_at'] = time.time()
             print(f'Results: {results_paths}')
 
 
@@ -365,10 +435,11 @@ def reset_frame_tracking():
 
 def maybe_print_comm_warning(message: str):
     global LAST_COMM_WARNING_TIME
+    RUNTIME_STATUS['last_error'] = message
     now = time.monotonic()
     if now - LAST_COMM_WARNING_TIME >= 5:
         print(message)
-        LAST_COMM_WARNING_TIME = now
+    LAST_COMM_WARNING_TIME = now
 
 
 def write_device_command(command: str, settle_seconds: float = 0.05):
@@ -484,6 +555,7 @@ def append_next_frame_samples():
 
 
 def append_sample_payload(payload: bytes):
+    RUNTIME_STATUS['last_audio_at'] = time.time()
     max_pending_bytes = (
         config_manager.config.sample_rate * BYTES_PER_SAMPLE * MAX_PENDING_SECONDS
     )
@@ -579,6 +651,7 @@ def setup():
                     'sample_rate': 256000,
                     'triggered_recording': True,
                     'machine_learning_enabled': True,
+                    'led_enabled': True,
                     'minimum_trigger_frequency': 5,
                     'maximum_recording_length': 5,
                     'trigger_window': 1,
@@ -597,19 +670,17 @@ def setup():
         )
         sys.exit(1)
     # Config path exists
-    with open(CONFIG_PATH) as f:
-        config = json.load(f)
-        config_manager.update(config)
-        update_recording_schedule()
+    config_manager.reload()
+    update_recording_schedule()
 
-        update_chunk_dimensions()
-        if config_manager.config.sample_rate != CONFIGURED_SAMPLE_RATE:
-            configure_device_sample_rate()
+    update_chunk_dimensions()
+    if config_manager.config.sample_rate != CONFIGURED_SAMPLE_RATE:
+        configure_device_sample_rate()
 
-        global LAST_RELOAD_TIME
-        global LAST_RELOAD_MONOTONIC
-        LAST_RELOAD_TIME = datetime.now()
-        LAST_RELOAD_MONOTONIC = time.monotonic()
+    global LAST_RELOAD_TIME
+    global LAST_RELOAD_MONOTONIC
+    LAST_RELOAD_TIME = datetime.now()
+    LAST_RELOAD_MONOTONIC = time.monotonic()
 
 
 def maybe_reload_config():
@@ -667,8 +738,10 @@ def record():
 
                 try:
                     data = read_sample_chunk()
-                except RuntimeError:
-                    data = None
+                except RuntimeError as error:
+                    RUNTIME_STATUS['last_error'] = str(error)
+                    time.sleep(1)
+                    continue
 
                 if data is None or len(data) != BYTES_PER_CHUNK:
                     print('Incomplete read:', len(data))
@@ -686,13 +759,15 @@ def record():
                             OUTPUT_DIR, f'chunk_{int(time.time())}.wav'
                         )
                         print(f'High frequency detected. Recording to file {filename}')
-                        wav_file = wave.open(filename, 'wb')
+                        wav_file = wave.open(f'{filename}.part', 'wb')
                         wav_file.setnchannels(1)
                         wav_file.setsampwidth(2)
                         wav_file.setframerate(config_manager.config.sample_rate)
                         recorder.begin_recording(wav_file, filename)
                         recorder.handle_chunk(data, True)
             else:
+                if recorder.recording:
+                    recorder.stop_recording()
                 if DEVICE_STREAMING:
                     stop_device_streaming()
                 time.sleep(5)
@@ -701,12 +776,17 @@ def record():
 
             print(f'Error Type: {type(ex).__name__}')
             print(f'Error Message: {ex}')
+            RUNTIME_STATUS['last_error'] = str(ex)
             traceback.print_exc()
         except KeyboardInterrupt:
+            if recorder.recording:
+                recorder.stop_recording()
             break
 
 
 def main():
+    telemetry = Telemetry()
+    telemetry.start()
     indicator = LED()
     indicator.start()
 
@@ -718,11 +798,13 @@ def main():
 
     classifier = Classifier()
     classifier.start()
+    WORKER_THREADS.extend([indicator, feed, renderer, classifier])
 
     try:
         setup()
         record()
     finally:
+        telemetry.stopped.set()
         print('\n\nShutting Down...')
         if DEVICE_STREAMING:
             stop_device_streaming()
