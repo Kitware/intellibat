@@ -11,8 +11,9 @@ The dashboard refreshes every 10 seconds and reports:
 
 - Recorder heartbeat, active recording, last received audio, last completed
   recording, session recording count, schedule, and applied configuration time.
-- Spectrogram and classifier queue lengths, worker thread health, last ML
-  result, buffered audio, and dropped Pico samples.
+- Spectrogram and classifier queue lengths, worker thread health, current job,
+  completed/skipped jobs, retries, last processing error, last completion,
+  startup recovery counts, buffered audio, and dropped Pico samples.
 - The recording and configuration services' systemd states, results, PIDs,
   restart counts, memory use, and active-since timestamps.
 - Raspberry Pi model, hostname, architecture, OS/kernel, CPU frequency,
@@ -33,6 +34,38 @@ The recorder writes an atomic heartbeat every five seconds. A heartbeat older
 than 20 seconds is marked stale; a streaming recorder with no audio for ten
 seconds is marked stalled. These are independent of systemd's process state.
 CPU utilization needs two samples, so the first reading can be unavailable.
+Recorder heartbeat and audio ages use monotonic time when available, so a
+manual wall-clock correction does not conceal stalled activity.
+
+### Set device time remotely
+
+Under **System status → Set device time**, choose **Use this computer's time**
+to copy the browser computer's clock, or enter a date/time and select
+**Set entered time**. Manual entry uses the browser's timezone, which is shown
+beside the field; a UTC preview makes the exact instant explicit. The device
+timezone is shown separately and is preserved. The request sets the Pi's system
+clock while the recording service remains online.
+
+Manual setting disables automatic network synchronization. **Enable network
+time** restores it; reaching a time server and completing synchronization can
+take time. The interface distinguishes enabled synchronization from a clock
+that is actually synchronized. It shows the Pi clock, timezone, and approximate
+difference from the browser clock. Clock-setting errors are displayed; if a
+manual setting fails, the app attempts to restore the original NTP setting.
+
+New recordings use the corrected time. Existing timestamps are unchanged, and
+filename collisions after setting the clock backwards receive a unique suffix
+instead of overwriting data. Earlier recordings remain exportable even when
+their modification dates are now in the future, and copy estimate expiration
+uses elapsed monotonic time.
+
+Clock control requires the included `49-intellibat-clock.rules` polkit rule,
+which grants the `intellibat` account systemd time-setting and NTP control.
+It uses [systemd's timedatectl interface](https://github.com/systemd/systemd/blob/main/man/timedatectl.xml)
+with explicit UTC timestamps and non-interactive authorization. Like the other
+configuration controls, it is available to clients on the device's local web
+interface; it does not require an SSH session. Unsupported hosts show the
+control as unavailable.
 
 Battery units follow the [Linux power supply interface](https://cdn.kernel.org/doc/html/latest/power/power_supply_class.html).
 Pi firmware measurements follow the [Raspberry Pi documentation](https://www.raspberrypi.com/documentation/computers/os.html)
@@ -137,12 +170,14 @@ sudo -u intellibat /opt/intellibat/venv/bin/python -m pip install -e ./intelliba
 sudo apt install -y udisks2
 sudo usermod -aG video intellibat
 sudo install -m 644 software/49-intellibat-storage.rules /etc/polkit-1/rules.d/49-intellibat-storage.rules
+sudo install -m 644 software/49-intellibat-clock.rules /etc/polkit-1/rules.d/49-intellibat-clock.rules
 sudo cp software/intellibat.service software/intellibat_config.service /etc/systemd/system/
 sudo systemctl daemon-reload
 sudo systemctl restart intellibat intellibat_config
 ```
 
-The updated recorder code must also be present at `/opt/intellibat/software/service.py`.
+The updated recorder code must also be present at `/opt/intellibat/software/service.py`
+and `/opt/intellibat/software/processing.py`.
 Mounting and write permissions depend on the filesystem. FAT/exFAT drives
 mounted by UDisks use the requesting account. On filesystems with Unix ownership,
 grant the `intellibat` account write access to the export directory on the Pi.
@@ -178,3 +213,5 @@ Tests cover tab routing, the existing LED setting, inventory and ML aggregation,
 parity with the species timeline, telemetry units and stale heartbeats, atomic
 WAV completion, incremental exports, conflicts, cancellation, removal, changed
 sources, insufficient space, and destination traversal/symlink rejection.
+Clock tests cover UTC conversion, request validation, NTP recovery, permission
+failures, and preserving recordings and exports across backward clock changes.

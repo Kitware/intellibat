@@ -56,6 +56,7 @@ sudo nmcli connection modify intellibat-ap wifi-sec.psk "${INTELLIBAT_AP_PASSWOR
 # Set up the recording and config services
 sudo apt install -y udisks2
 sudo install -m 644 software/49-intellibat-storage.rules /etc/polkit-1/rules.d/49-intellibat-storage.rules
+sudo install -m 644 software/49-intellibat-clock.rules /etc/polkit-1/rules.d/49-intellibat-clock.rules
 sudo cp software/intellibat.service /etc/systemd/system/intellibat.service
 sudo cp software/intellibat_config.service /etc/systemd/system/intellibat_config.service
 sudo systemctl daemon-reload

@@ -218,11 +218,19 @@ class SystemTelemetry:
                 runtime['age_seconds'] = max(
                     0, time.time() - float(runtime['updated_at'])
                 )
+                # Both processes share Linux's monotonic clock. Manual wall
+                # clock corrections must not disguise an expired heartbeat.
+                heartbeat_tick = runtime.get('updated_monotonic')
+                if heartbeat_tick is not None and time.monotonic() >= heartbeat_tick:
+                    runtime['age_seconds'] = time.monotonic() - heartbeat_tick
                 runtime['stale'] = runtime['age_seconds'] > 20
                 last_audio = runtime.get('last_audio_at')
+                audio_age = time.time() - last_audio if last_audio else None
+                audio_tick = runtime.get('last_audio_monotonic')
+                if audio_tick is not None and time.monotonic() >= audio_tick:
+                    audio_age = time.monotonic() - audio_tick
                 runtime['audio_stalled'] = bool(
-                    runtime.get('streaming')
-                    and (not last_audio or time.time() - last_audio > 10)
+                    runtime.get('streaming') and (audio_age is None or audio_age > 10)
                 )
             except (OSError, ValueError, KeyError, TypeError) as error:
                 runtime_error = f'Recorder heartbeat unavailable: {error}'

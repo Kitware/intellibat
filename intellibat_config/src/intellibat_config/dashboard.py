@@ -2,9 +2,10 @@ from urllib.parse import urlsplit
 
 from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import FileResponse
-from pydantic import BaseModel, Field
+from pydantic import AwareDatetime, BaseModel, Field
 
 from intellibat_config.api import templates
+from intellibat_config.device_clock import DeviceClock
 from intellibat_config.recordings import RecordingIndex
 from intellibat_config.settings import settings
 from intellibat_config.storage import CopyManager, ExternalStorage
@@ -19,6 +20,11 @@ index = RecordingIndex(
 telemetry = SystemTelemetry(settings)
 storage = ExternalStorage(index.roots.values())
 copies = CopyManager(index, storage)
+clock = DeviceClock()
+
+
+class ManualClock(BaseModel):
+    instant: AwareDatetime
 
 
 class Destination(BaseModel):
@@ -55,6 +61,23 @@ def data_page(request: Request):
 @router.get('/api/status')
 def system_status():
     return telemetry.snapshot()
+
+
+@router.get('/api/clock')
+def clock_status():
+    return clock.snapshot()
+
+
+@router.post('/api/clock/manual')
+def set_device_clock(value: ManualClock, request: Request):
+    same_origin(request)
+    return clock.set_manual(value.instant)
+
+
+@router.post('/api/clock/network')
+def enable_network_clock(request: Request):
+    same_origin(request)
+    return clock.enable_network_time()
 
 
 @router.get('/api/recordings')

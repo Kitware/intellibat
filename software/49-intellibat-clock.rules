@@ -1,0 +1,9 @@
+// Allow the IntelliBat web service to set the device clock and toggle NTP.
+// The web interface validates requests and does not execute arbitrary commands.
+polkit.addRule(function(action, subject) {
+    if (subject.user === "intellibat" &&
+        (action.id === "org.freedesktop.timedate1.set-time" ||
+         action.id === "org.freedesktop.timedate1.set-ntp")) {
+        return polkit.Result.YES;
+    }
+});

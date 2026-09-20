@@ -25,6 +25,7 @@ Not supported:
 import atexit
 import colorsys
 import json
+import logging
 import os
 import struct
 import sys
@@ -38,7 +39,6 @@ from queue import Queue
 from threading import Thread
 from zoneinfo import ZoneInfo
 
-import batbot
 import numpy as np
 import serial
 from astral import LocationInfo
@@ -46,13 +46,14 @@ from astral.sun import sun
 from timezonefinder import TimezoneFinder
 
 from intellibat_config import ConfigManager, ScheduleMode
+from processing import Classifier, Spectrogram, recover_recordings
 
 # Hardware/serial related constants (future configurable)
 PORT = '/dev/ttyACM0'
 BAUD = 115200
 
-INCOMING = Queue()
-OUTGOING = Queue()
+SPECTROGRAM_QUEUE = Queue()
+CLASSIFIER_QUEUE = Queue()
 
 # Configuration
 CONFIG_PATH = Path(os.getenv('INTELLIBAT_CONFIG_PATH', 'config.json'))
@@ -219,16 +220,29 @@ class Telemetry(Thread):
         while not self.stopped.is_set():
             try:
                 config = config_manager.config
+                workers = {
+                    worker.name: worker.snapshot()
+                    for worker in WORKER_THREADS
+                    if hasattr(worker, 'snapshot')
+                }
                 status = {
                     **RUNTIME_STATUS,
                     'updated_at': time.time(),
+                    'updated_monotonic': time.monotonic(),
                     'pid': os.getpid(),
                     'streaming': DEVICE_STREAMING,
                     'sample_rate': CONFIGURED_SAMPLE_RATE,
                     'buffered_bytes': len(PENDING_SAMPLE_BYTES),
                     'dropped_samples': LAST_DROPPED_SAMPLES,
-                    'spectrogram_queue': INCOMING.qsize(),
-                    'classifier_queue': OUTGOING.qsize(),
+                    'spectrogram_queue': SPECTROGRAM_QUEUE.qsize(),
+                    'classifier_queue': CLASSIFIER_QUEUE.qsize(),
+                    'processing_workers': workers,
+                    'last_spectrogram_at': workers.get('spectrogram', {}).get(
+                        'last_completed_at'
+                    ),
+                    'last_classification_at': workers.get('classifier', {}).get(
+                        'last_completed_at'
+                    ),
                     'led_enabled': config.led_enabled,
                     'machine_learning_enabled': config.machine_learning_enabled,
                     'triggered_recording': config.triggered_recording,
@@ -333,87 +347,32 @@ class UART(Thread):
 
     def shutdown(self):
         self.enabled = False
-        time.sleep(0.1)
+        # The bounded serial read wakes within 0.5 s. Let the thread finish
+        # before closing its descriptor, rather than racing an active read.
+        if self.is_alive():
+            self.join(timeout=1)
         self.uart1.close()  # Close port
 
     def run(self):
         time.sleep(0.5)  # Allow time for connection
-        while True:
-            if self.enabled and self.uart1.in_waiting > 0:
-                try:
-                    line = self.uart1.readline()
-                    message = line.decode('utf-8').rstrip()
-                    RUNTIME_STATUS['uart_message'] = message
-                    print(f'[UART1] {message}')
-                except Exception:
-                    print('[UART1] ERROR: Failed to decode message')
-
-
-class Spectrogram(Thread):
-    def __init__(self):
-        Thread.__init__(self)
-        self.name = 'spectrogram'
-        self.daemon = True
-        self.spectrogram_queue = INCOMING
-        self.classifier_queue = OUTGOING
-
-    def next(self):
-        return self.spectrogram_queue.get(block=True)
-
-    def run(self):
-        while True:
-            chunk_filepath = self.next()
-            qsize = self.spectrogram_queue.qsize()
-            if qsize > 1:
-                print(f'[spectrogram] Queue size {qsize}')
-
-            _, compressed_paths, metadata_path, metadata = batbot.spectrogram.compute(
-                chunk_filepath,
-                output_folder=SPECTROGRAM_DIR,
-                fast_mode=True,
-                quiet=True,
-                debug=False,
-            )
-            print(f'Created: {compressed_paths}')
-
-            if config_manager.config.machine_learning_enabled:
-                self.classifier_queue.put(compressed_paths)
-
-
-class Classifier(Thread):
-    def __init__(self):
-        Thread.__init__(self)
-        self.name = 'classifier'
-        self.daemon = True
-        self.classifier_queue = OUTGOING
-        self.runner = batbot.classifier.Classifier(
-            batch_size=1,
-            num_workers=1,
-        )
-        print(self.runner.session)
-
-    def next(self):
-        return self.classifier_queue.get(block=True)
-
-    def run(self):
-        while True:
-            compressed_paths = self.next()
-            qsize = self.classifier_queue.qsize()
-            if qsize > 1:
-                print(f'[classifier] Queue size {qsize}')
-
-            results = self.runner.classify(compressed_paths)
-
-            results_paths = []
-            for compressed_path, result in zip(compressed_paths, results):
-                results_path = compressed_path.replace('.jpg', '.results.json')
-                with open(f'{results_path}.tmp', 'w') as results_file:
-                    json.dump(result, results_file, indent=4)
-                os.replace(f'{results_path}.tmp', results_path)
-                results_paths.append(results_path)
-
-            RUNTIME_STATUS['last_classification_at'] = time.time()
-            print(f'Results: {results_paths}')
+        while self.enabled:
+            try:
+                # Wait in the driver when the debug port is quiet. Polling
+                # in_waiting in a tight loop kept a CPU core unnecessarily busy.
+                line = self.uart1.read_until(b'\n', size=4096)
+                if not line:
+                    continue
+                message = line.decode('utf-8').rstrip()
+                RUNTIME_STATUS['uart_message'] = message
+                print(f'[UART1] {message}')
+            except UnicodeDecodeError:
+                print('[UART1] ERROR: Failed to decode message')
+            except (OSError, serial.SerialException):
+                if not self.enabled:
+                    break
+                logging.exception('[UART1] Could not read debug port')
+                # A disconnected/broken debug port must not create a new busy loop.
+                time.sleep(0.5)
 
 
 def update_chunk_dimensions():
@@ -556,6 +515,7 @@ def append_next_frame_samples():
 
 def append_sample_payload(payload: bytes):
     RUNTIME_STATUS['last_audio_at'] = time.time()
+    RUNTIME_STATUS['last_audio_monotonic'] = time.monotonic()
     max_pending_bytes = (
         config_manager.config.sample_rate * BYTES_PER_SAMPLE * MAX_PENDING_SECONDS
     )
@@ -723,10 +683,30 @@ def chunk_triggers(data):
     return flag
 
 
+def recording_filename():
+    # A remotely corrected clock can revisit a second already recorded.
+    # Keep the timestamp prefix and select a fresh stem without overwriting
+    # either a WAV in progress or existing spectrogram/ML products.
+    stem = f'chunk_{int(time.time())}'
+    sequence = 0
+    while True:
+        name = stem if sequence == 0 else f'{stem}.{sequence}'
+        filename = os.path.join(OUTPUT_DIR, f'{name}.wav')
+        if (
+            not os.path.lexists(filename)
+            and not os.path.lexists(f'{filename}.part')
+            and not os.path.lexists(
+                os.path.join(SPECTROGRAM_DIR, f'{name}.metadata.json')
+            )
+        ):
+            return filename
+        sequence += 1
+
+
 def record():
     print('Reading...')
     recorder = RecordingStateMachine(
-        config_manager=config_manager, spectrogram_queue=INCOMING
+        config_manager=config_manager, spectrogram_queue=SPECTROGRAM_QUEUE
     )
     while True:
         try:
@@ -755,9 +735,7 @@ def record():
                 else:  # Recorder is idle
                     continuous_mode = not config_manager.config.triggered_recording
                     if triggers or continuous_mode:
-                        filename = os.path.join(
-                            OUTPUT_DIR, f'chunk_{int(time.time())}.wav'
-                        )
+                        filename = recording_filename()
                         print(f'High frequency detected. Recording to file {filename}')
                         wav_file = wave.open(f'{filename}.part', 'wb')
                         wav_file.setnchannels(1)
@@ -784,7 +762,21 @@ def record():
             break
 
 
+def recover_pending_recordings():
+    RUNTIME_STATUS['recovery_state'] = 'scanning'
+    try:
+        RUNTIME_STATUS['recovered_jobs'] = recover_recordings(
+            OUTPUT_DIR, SPECTROGRAM_DIR, SPECTROGRAM_QUEUE, CLASSIFIER_QUEUE
+        )
+        RUNTIME_STATUS['recovery_state'] = 'complete'
+    except Exception as error:
+        RUNTIME_STATUS['recovery_state'] = 'failed'
+        RUNTIME_STATUS['last_error'] = f'Recording recovery failed: {error}'
+        logging.exception('Recording recovery failed')
+
+
 def main():
+    logging.basicConfig(level=logging.INFO)
     telemetry = Telemetry()
     telemetry.start()
     indicator = LED()
@@ -793,18 +785,23 @@ def main():
     feed = UART()
     feed.start()
 
-    renderer = Spectrogram()
+    renderer = Spectrogram(SPECTROGRAM_QUEUE, CLASSIFIER_QUEUE, SPECTROGRAM_DIR)
     renderer.start()
 
-    classifier = Classifier()
+    classifier = Classifier(CLASSIFIER_QUEUE, config_manager)
     classifier.start()
     WORKER_THREADS.extend([indicator, feed, renderer, classifier])
+    Thread(
+        target=recover_pending_recordings, name='recording-recovery', daemon=True
+    ).start()
 
     try:
         setup()
         record()
     finally:
         telemetry.stopped.set()
+        renderer.stopped.set()
+        classifier.stopped.set()
         print('\n\nShutting Down...')
         if DEVICE_STREAMING:
             stop_device_streaming()

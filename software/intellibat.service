@@ -25,6 +25,7 @@ Environment=INTELLIBAT_RECORDINGS_PATH=/opt/intellibat/test_recordings
 Environment=INTELLIBAT_SPECTROGRAMS_PATH=/opt/intellibat/output
 Environment=INTELLIBAT_TELEMETRY_PATH=/run/intellibat/status.json
 Environment=BATBOT_REDUCED=1
+Environment=MPLBACKEND=Agg
 
 [Install]
 WantedBy=multi-user.target

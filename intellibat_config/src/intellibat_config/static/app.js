@@ -84,9 +84,27 @@ function renderStatus(data) {
             ['Buffered audio', bytes(runtime.buffered_bytes)], ['Dropped samples (Pico)', number(runtime.dropped_samples)],
             ['LED', enabled(runtime.led_enabled)], ['Machine learning', enabled(runtime.machine_learning_enabled)],
             ['Configuration applied', dateTime(runtime.config_loaded_at)], ['Last ML result', dateTime(runtime.last_classification_at)],
+            ['Last spectrogram', dateTime(runtime.last_spectrogram_at)], ['Startup recovery', runtime.recovery_state],
+            ['Recovered jobs', runtime.recovered_jobs ? `${number(runtime.recovered_jobs.spectrogram)} WAVs · ${number(runtime.recovered_jobs.classifier)} images` : 'Unavailable'],
             ['Worker threads', Object.entries(runtime.threads || {}).map(([name, alive]) => `${name}: ${alive ? 'running' : 'stopped'}`).join(' · ')],
         ]));
         runtimeNode.append(grid);
+        const workers = element('div', null, 'runtime-grid worker-details');
+        for (const [name, worker] of Object.entries(runtime.processing_workers || {})) {
+            const card = element('div');
+            const state = runtime.threads?.[name] === false ? 'stopped' : worker.state;
+            card.append(element('h3', `${name === 'spectrogram' ? 'Spectrogram' : 'ML classifier'} · ${state}`));
+            card.append(details([
+                ['Current file', worker.current_file || 'Waiting for work'],
+                ['Completed this session', number(worker.completed)], ['Already complete', number(worker.skipped)],
+                ['Failed attempts / retries', `${number(worker.failures)} / ${number(worker.retries)}`],
+                ['Last completion', dateTime(worker.last_completed_at)],
+            ]));
+            if (state === 'paused') card.append(element('p', 'Queued images will be processed when machine learning is enabled in Settings.', 'notice'));
+            if (worker.last_error) card.append(element('p', `Last processing error (${dateTime(worker.last_error_at)}): ${worker.last_error}`, 'notice error'));
+            workers.append(card);
+        }
+        runtimeNode.append(workers);
         if (runtime.stale) runtimeNode.prepend(element('p', 'The recorder heartbeat is stale. Values below are the last reported values.', 'notice error'));
         if (runtime.audio_stalled) runtimeNode.prepend(element('p', 'The device is expected to be streaming, but no audio has arrived in the last 10 seconds.', 'notice error'));
         if (runtime.last_error) runtimeNode.append(element('p', runtime.last_error, 'notice error'));
@@ -157,6 +175,46 @@ function renderStatus(data) {
 }
 
 let collection = null;
+let clockBusy = false;
+let clockAvailable = false;
+function renderClock(data) {
+    clockAvailable = data.available;
+    $('clock-controls').disabled = clockBusy || !clockAvailable;
+    $('enable-network-time').disabled = data.can_ntp === false;
+    const delta = (data.timestamp * 1000 - Date.now()) / 1000;
+    $('clock-status').replaceChildren(details([
+        ['Device time', dateTime(data.timestamp, data.timezone || undefined)], ['Device timezone', data.timezone],
+        ['Network time', enabled(data.ntp_enabled)], ['Synchronized', data.synchronized == null ? 'Unavailable' : data.synchronized ? 'Yes' : 'No'],
+        ['Compared with this computer', Math.abs(delta) < 2 ? 'Within 2 seconds' : `${duration(Math.abs(delta))} ${delta > 0 ? 'ahead' : 'behind'} (approximate)`],
+    ]));
+    if (!data.available) $('clock-status').append(element('p', data.error || 'Device clock controls unavailable.', 'notice error'));
+}
+function localDateTime(date) {
+    const pad = (n) => String(n).padStart(2, '0');
+    return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}:${pad(date.getSeconds())}`;
+}
+function enteredTime() {
+    const input = $('manual-time');
+    const date = new Date(input.value);
+    if (!input.value || !input.checkValidity() || !Number.isFinite(date.getTime())) throw new Error('Choose a valid date and time.');
+    // Browsers silently move nonexistent local times through the DST gap.
+    if (localDateTime(date).slice(0, input.value.length) !== input.value) throw new Error('This local time does not exist because the clocks move forward. Choose another time.');
+    return date;
+}
+async function changeClock(path, body, message) {
+    if (clockBusy) return;
+    clockBusy = true; $('clock-controls').disabled = true;
+    notice('clock-error', ''); notice('clock-message', 'Applying clock change…');
+    try {
+        const result = await api(path, body);
+        renderClock(result);
+        notice('clock-message', result.available ? message : 'Change accepted, but clock status could not be read. Refresh to verify.');
+    } catch (error) {
+        notice('clock-message', ''); notice('clock-error', error.message);
+        try { renderClock(await api('/api/clock')); } catch { /* Keep the action error visible. */ }
+    } finally { clockBusy = false; $('clock-controls').disabled = !clockAvailable; }
+}
+
 function speciesColor(index, count) { return `hsl(${Math.round(index / Math.max(1, count) * 360)} 52% 36%)`; }
 function dayKey(timestamp, timezone) {
     const parts = new Intl.DateTimeFormat('en-US', {timeZone: timezone, year: 'numeric', month: '2-digit', day: '2-digit'}).formatToParts(new Date(timestamp * 1000));
@@ -327,7 +385,27 @@ async function pollCopy() {
 
 if (document.body.dataset.page === 'status') {
     let loading = false;
-    const refresh = async () => { if (loading) return; loading = true; try { renderStatus(await api('/api/status')); notice('page-error', ''); } catch (error) { notice('page-error', `${error.message} Showing the last available readings.`); } finally { loading = false; } };
+    const refresh = async () => {
+        if (loading) return; loading = true;
+        const results = await Promise.allSettled([api('/api/status'), api('/api/clock')]);
+        try {
+            if (results[0].status === 'fulfilled') { renderStatus(results[0].value); notice('page-error', ''); }
+            else notice('page-error', `${results[0].reason.message} Showing the last available readings.`);
+            if (results[1].status === 'fulfilled') { if (!clockBusy) renderClock(results[1].value); }
+            else notice('clock-error', results[1].reason.message);
+        } finally { loading = false; }
+    };
+    $('clock-input-zone').textContent = `(${Intl.DateTimeFormat().resolvedOptions().timeZone}, this computer's timezone)`;
+    $('manual-time').addEventListener('input', () => {
+        try { $('clock-preview').textContent = `Will set the device to ${enteredTime().toISOString()} (UTC).`; }
+        catch (error) { $('clock-preview').textContent = error.message; }
+    });
+    $('set-manual-time').addEventListener('click', () => {
+        try { changeClock('/api/clock/manual', {instant: enteredTime().toISOString()}, 'Device time updated. Automatic network time is off.'); }
+        catch (error) { notice('clock-error', error.message); }
+    });
+    $('set-browser-time').addEventListener('click', () => changeClock('/api/clock/manual', {instant: new Date().toISOString()}, "Device time set from this computer. Automatic network time is off."));
+    $('enable-network-time').addEventListener('click', () => changeClock('/api/clock/network', {}, 'Network time enabled. Synchronization requires a reachable time server and may take a moment.'));
     action('refresh-status', refresh); refresh(); setInterval(() => { if (!document.hidden) refresh(); }, 10000);
 }
 if (document.body.dataset.page === 'data') {

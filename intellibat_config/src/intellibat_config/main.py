@@ -5,12 +5,18 @@ from fastapi.responses import JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 
 from intellibat_config import api, dashboard
+from intellibat_config.device_clock import ClockError
 from intellibat_config.storage import StorageError
 
 app = FastAPI(title='IntelliBat')
 app.mount(
     '/static', StaticFiles(directory=Path(__file__).parent / 'static'), name='static'
 )
+
+
+@app.exception_handler(ClockError)
+async def clock_error(request: Request, error: ClockError):
+    return JSONResponse(status_code=400, content={'detail': str(error)})
 
 
 @app.exception_handler(StorageError)

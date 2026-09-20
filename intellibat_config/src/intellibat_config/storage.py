@@ -431,7 +431,7 @@ class CopyManager:
                     self.check_cancelled()
                     if (
                         not item.unchanged()
-                        or time.time_ns() - item.mtime_ns < 2_000_000_000
+                        or 0 <= time.time_ns() - item.mtime_ns < 2_000_000_000
                     ):
                         pending += 1
                         continue
@@ -507,6 +507,7 @@ class CopyManager:
                         pending_files=pending,
                         current_file=None,
                         estimated_at=time.time(),
+                        _estimated_monotonic=time.monotonic(),
                     )
         except Exception as error:
             self.update(
@@ -519,7 +520,7 @@ class CopyManager:
             self.snapshot(job_id)
             if self.job['state'] != 'ready' or self.plan is None:
                 raise StorageError('Preview this copy before starting.')
-            if time.time() - self.job['estimated_at'] > 900:
+            if time.monotonic() - self.job['_estimated_monotonic'] > 900:
                 raise StorageError(
                     'This estimate expired. Preview again before copying.'
                 )

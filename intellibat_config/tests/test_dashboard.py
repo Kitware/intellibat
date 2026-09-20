@@ -336,7 +336,9 @@ class CopyTests(WorkspaceTest):
         self.copies.update(enough_space=False)
         with self.assertRaises(StorageError):
             self.copies.start(job['id'])
-        self.copies.update(enough_space=True, estimated_at=time.time() - 901)
+        self.copies.update(
+            enough_space=True, _estimated_monotonic=time.monotonic() - 901
+        )
         with self.assertRaises(StorageError):
             self.copies.start(job['id'])
 
@@ -352,8 +354,37 @@ class CopyTests(WorkspaceTest):
         job = self.estimate()
         self.assertEqual((job['copy_files'], job['conflicts']), (0, 1))
 
+    def test_clock_rollback_does_not_hide_old_recordings_from_copy(self):
+        write_file(self.recordings / 'before-clock-correction.wav', age=-3600)
+        job = self.estimate()
+        self.assertEqual((job['copy_files'], job['pending_files']), (1, 0))
+        self.copy()
+
 
 class HardwareTests(WorkspaceTest):
+    def test_heartbeat_age_uses_monotonic_clock_after_wall_clock_correction(self):
+        settings = SimpleNamespace(
+            intellibat_telemetry_path=str(self.root / 'heartbeat.json'),
+            intellibat_recordings_path=str(self.recordings),
+            intellibat_spectrograms_path=str(self.output),
+        )
+        write_file(
+            Path(settings.intellibat_telemetry_path),
+            json.dumps(
+                {
+                    'updated_at': time.time() + 3600,
+                    'updated_monotonic': time.monotonic() - 30,
+                    'last_audio_at': time.time() + 3600,
+                    'last_audio_monotonic': time.monotonic() - 30,
+                    'streaming': True,
+                }
+            ).encode(),
+        )
+        with patch('intellibat_config.telemetry.command', return_value=None):
+            status = SystemTelemetry(settings).snapshot()
+        self.assertTrue(status['runtime']['stale'])
+        self.assertTrue(status['runtime']['audio_stalled'])
+
     def test_missing_and_stale_heartbeat_are_explicit(self):
         settings = SimpleNamespace(
             intellibat_telemetry_path=str(self.root / 'heartbeat.json'),
@@ -556,6 +587,37 @@ class WebTests(WorkspaceTest):
         )
         self.assertEqual(response.status_code, 400)
 
+    def test_clock_controls_validate_and_dispatch_without_changing_host_time(self):
+        with patch('intellibat_config.dashboard.clock') as clock:
+            clock.snapshot.return_value = {'available': True, 'timezone': 'UTC'}
+            clock.set_manual.return_value = {'ntp_enabled': False}
+            clock.enable_network_time.return_value = {'ntp_enabled': True}
+            self.assertEqual(self.client.get('/api/clock').json()['timezone'], 'UTC')
+            response = self.client.post(
+                '/api/clock/manual', json={'instant': '2026-09-19T12:00:00-07:00'}
+            )
+            self.assertEqual(response.status_code, 200)
+            self.assertEqual(clock.set_manual.call_args.args[0].hour, 12)
+            for invalid in ('not a date', '2026-09-19T12:00:00'):
+                self.assertEqual(
+                    self.client.post(
+                        '/api/clock/manual', json={'instant': invalid}
+                    ).status_code,
+                    422,
+                )
+            response = self.client.post(
+                '/api/clock/manual',
+                json={'instant': '2026-09-19T12:00:00Z'},
+                headers={'Origin': 'https://other.invalid'},
+            )
+            self.assertEqual(response.status_code, 403)
+            clock.set_manual.assert_called_once()
+            self.assertEqual(
+                self.client.post('/api/clock/network', json={}).status_code, 200
+            )
+            clock.enable_network_time.assert_called_once()
+            self.assertIn('id="set-browser-time"', self.client.get('/status').text)
+
 
 class RecorderTests(WorkspaceTest):
     def service_definitions(self, names, namespace):
@@ -566,7 +628,8 @@ class RecorderTests(WorkspaceTest):
             body=[
                 node
                 for node in tree.body
-                if isinstance(node, ast.ClassDef) and node.name in names
+                if isinstance(node, (ast.ClassDef, ast.FunctionDef))
+                and node.name in names
             ],
             type_ignores=[],
         )
@@ -626,13 +689,24 @@ class RecorderTests(WorkspaceTest):
                 'CONFIGURED_SAMPLE_RATE': config.sample_rate,
                 'PENDING_SAMPLE_BYTES': b'\x00\x00',
                 'LAST_DROPPED_SAMPLES': 7,
-                'INCOMING': Queue(),
-                'OUTGOING': Queue(),
+                'SPECTROGRAM_QUEUE': Queue(),
+                'CLASSIFIER_QUEUE': Queue(),
                 'recording_schedule': SimpleNamespace(
                     start_time=config.start_time, end_time=config.end_time
                 ),
                 'LAST_RELOAD_TIME': datetime.now(),
-                'WORKER_THREADS': [threading.current_thread()],
+                'WORKER_THREADS': [
+                    threading.current_thread(),
+                    SimpleNamespace(
+                        name='spectrogram',
+                        is_alive=lambda: True,
+                        snapshot=lambda: {
+                            'state': 'processing',
+                            'current_file': 'sample.wav',
+                            'last_completed_at': 123,
+                        },
+                    ),
+                ],
                 'TELEMETRY_PATH': path,
             },
         )
@@ -644,7 +718,34 @@ class RecorderTests(WorkspaceTest):
         self.assertEqual(status['dropped_samples'], 7)
         self.assertEqual(status['buffered_bytes'], 2)
         self.assertTrue(status['threads']['MainThread'])
+        self.assertEqual(
+            status['processing_workers']['spectrogram']['current_file'], 'sample.wav'
+        )
+        self.assertEqual(status['last_spectrogram_at'], 123)
+        self.assertGreater(status['updated_monotonic'], 0)
         self.assertFalse(path.with_suffix('.tmp').exists())
+
+    def test_clock_rollback_never_reuses_recording_or_product_names(self):
+        with patch.object(time, 'time', return_value=1789812345):
+            namespace = self.service_definitions(
+                {'recording_filename'},
+                {
+                    'os': os,
+                    'time': time,
+                    'OUTPUT_DIR': str(self.recordings),
+                    'SPECTROGRAM_DIR': str(self.output),
+                },
+            )
+            write_file(self.recordings / 'chunk_1789812345.wav', b'original')
+            write_file(self.recordings / 'chunk_1789812345.1.wav.part', b'partial')
+            write_file(self.output / 'chunk_1789812345.2.metadata.json', b'products')
+            self.assertEqual(
+                namespace['recording_filename'](),
+                str(self.recordings / 'chunk_1789812345.3.wav'),
+            )
+            self.assertEqual(
+                (self.recordings / 'chunk_1789812345.wav').read_bytes(), b'original'
+            )
 
 
 if __name__ == '__main__':

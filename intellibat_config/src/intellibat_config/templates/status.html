@@ -11,6 +11,16 @@
     <section class="panel"><h2>Memory &amp; cooling</h2><div id="memory-status"></div></section>
     <section class="panel"><h2>Battery &amp; power</h2><div id="power-status"></div></section>
     <section class="panel"><h2>Network &amp; clock</h2><div id="network-status"></div></section>
+    <section class="panel wide"><h2>Set device time</h2>
+        <div id="clock-status" aria-live="polite"><p class="loading">Reading device clock…</p></div>
+        <p class="field-help">Manual time changes turn off automatic network time synchronization. The recorder stays online; future recordings use the new clock. Existing recording timestamps are preserved.</p>
+        <fieldset id="clock-controls" disabled>
+            <div class="field"><label for="manual-time">Date and time <span id="clock-input-zone"></span></label><input id="manual-time" type="datetime-local" step="1" min="1970-01-01T00:00" aria-describedby="clock-preview"><p id="clock-preview" class="field-help">Choose a date and time or use this computer's clock.</p></div>
+            <div class="button-row clock-buttons"><button id="set-manual-time" type="button">Set entered time</button><button id="set-browser-time" type="button" class="secondary">Use this computer's time</button><button id="enable-network-time" type="button" class="secondary">Enable network time</button></div>
+        </fieldset>
+        <p id="clock-error" class="notice error" role="alert" hidden></p>
+        <p id="clock-message" class="notice success" role="status" hidden></p>
+    </section>
     <section class="panel wide"><h2>Device storage</h2><div id="disk-status" class="storage-grid"></div></section>
 </div>
 <p class="footnote">Updates every 10 seconds. Battery readings appear when a Linux power-supply driver exposes them. Missing sensors are shown as unavailable.</p>
